@@ -1,0 +1,12 @@
+/mnt/Shared/Projects/stm32_digit_recognition/external/quantized_digit_recognition/src/nn.c:13:16:round_shift_right_symmetric	4
+/mnt/Shared/Projects/stm32_digit_recognition/external/quantized_digit_recognition/src/nn.c:47:15:saturate_to_int8	3
+/mnt/Shared/Projects/stm32_digit_recognition/external/quantized_digit_recognition/src/nn.c:75:13:mat_mult	4
+/mnt/Shared/Projects/stm32_digit_recognition/external/quantized_digit_recognition/src/nn.c:122:13:conv2d	8
+/mnt/Shared/Projects/stm32_digit_recognition/external/quantized_digit_recognition/src/nn.c:188:6:pooling2d	8
+/mnt/Shared/Projects/stm32_digit_recognition/external/quantized_digit_recognition/src/nn.c:244:13:relu	2
+/mnt/Shared/Projects/stm32_digit_recognition/external/quantized_digit_recognition/src/nn.c:261:13:quantize	2
+/mnt/Shared/Projects/stm32_digit_recognition/external/quantized_digit_recognition/src/nn.c:290:13:dequantize_per_col	3
+/mnt/Shared/Projects/stm32_digit_recognition/external/quantized_digit_recognition/src/nn.c:325:13:dequantize_per_channel	4
+/mnt/Shared/Projects/stm32_digit_recognition/external/quantized_digit_recognition/src/nn.c:357:6:argmax_per_row	4
+/mnt/Shared/Projects/stm32_digit_recognition/external/quantized_digit_recognition/src/nn.c:381:6:linear_layer	2
+/mnt/Shared/Projects/stm32_digit_recognition/external/quantized_digit_recognition/src/nn.c:402:6:conv2d_layer	1
