@@ -1,18 +1,44 @@
-# Prerequisites
+# STM32CubeIDE / STM32CubeMX metadata
+.settings/
+.metadata/
+.toolchains/
+.config/
+
+# STM32 project artifacts (optional in VCS; tracked files remain tracked)
+.mxproject
+.project
+.cproject
+
+# Build directories
+Debug/
+debug/
+Release/
+release/
+build/
+Build/
+
+# Prerequisites / dependency files
 *.d
 
-# Object files
+# Object and binary artifacts
 *.o
 *.ko
 *.obj
 *.elf
+*.hex
+*.bin
+*.out
+*.exe
+*.app
+*.i*86
+*.x86_64
 
 # Linker output
 *.ilk
 *.map
 *.exp
 
-# Precompiled Headers
+# Precompiled headers
 *.gch
 *.pch
 
@@ -22,27 +48,21 @@
 *.la
 *.lo
 
-# Shared objects (inc. Windows DLLs)
+# Shared objects
 *.dll
 *.so
 *.so.*
 *.dylib
 
-# Executables
-*.exe
-*.out
-*.app
-*.i*86
-*.x86_64
-*.hex
-
-# Debug files
+# Debug and analysis artifacts
 *.dSYM/
 *.su
 *.idb
 *.pdb
+*.dwo
+*.cyclo
 
-# Kernel Module Compile Results
+# Kernel module compile results
 *.mod*
 *.cmd
 .tmp_versions/
@@ -51,5 +71,12 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
-# debug information files
-*.dwo
+# Temp and backup files
+*~
+*.bak
+*.tmp
+*.log
+
+# Common OS-generated files
+.DS_Store
+Thumbs.db
