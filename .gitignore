@@ -16,6 +16,8 @@ Release/
 release/
 build/
 Build/
+firmware/NUCLEO_F446RE/Debug/
+firmware/NUCLEO_F446RE/Release/
 
 # Prerequisites / dependency files
 *.d
