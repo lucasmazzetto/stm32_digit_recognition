@@ -1,10 +1,6 @@
-#include "../include/utils.h"
+#include "log.h"
 
-#include "stm32f4xx_hal.h"
-
-#include <string.h>
-
-void uart_print(UART_HandleTypeDef *uart, const char *message)
+void serial_print(UART_HandleTypeDef *uart, const char *message)
 {
   size_t len;
 

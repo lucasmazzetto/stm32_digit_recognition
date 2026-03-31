@@ -1,11 +1,4 @@
-#include "../include/app.h"
-#include "../include/utils.h"
-
-#include "convnet.h"
-#include "stm32f4xx_hal.h"
-
-#include <stddef.h>
-#include <stdio.h>
+#include "app.h"
 
 static const int input_sample[] = {
     -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
@@ -134,7 +127,7 @@ void run_app(app_config_t *config)
 
     len = snprintf(msg, sizeof(msg), "Predicted class: %lu\r\n", (unsigned long)class_indices[0]);
     if (len > 0) {
-      uart_print(config->uart, msg);
+      serial_print(config->uart, msg);
     }
   }
 #endif
