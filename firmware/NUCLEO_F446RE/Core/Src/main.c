@@ -50,7 +50,7 @@ UART_HandleTypeDef huart2;
 DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
-static app_config_t app_config;
+// static app_config_t app_config;
 
 /* USER CODE END PV */
 
@@ -103,7 +103,7 @@ int main(void)
   MX_DCMI_Init();
   MX_I2C2_Init();
   /* USER CODE BEGIN 2 */
-  app_config.uart = &huart2;
+  // app_config.uart = &huart2;
   
   /* USER CODE END 2 */
 
@@ -111,8 +111,11 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    run_app(&app_config);
-    HAL_Delay(500U);
+    // run_app(&app_config);
+    // HAL_Delay(500U);
+
+    
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
