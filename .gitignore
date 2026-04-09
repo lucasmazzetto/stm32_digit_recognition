@@ -82,3 +82,7 @@ dkms.conf
 # Common OS-generated files
 .DS_Store
 Thumbs.db
+
+# Local tooling files
+.venv/
+.clang-format

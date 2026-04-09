@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "app.h"
+#include "serial.h"
 
 /* USER CODE END Includes */
 
@@ -50,7 +51,6 @@ UART_HandleTypeDef huart2;
 DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
-// static app_config_t app_config;
 
 /* USER CODE END PV */
 
@@ -102,19 +102,42 @@ int main(void)
   MX_USART2_UART_Init();
   MX_DCMI_Init();
   MX_I2C2_Init();
-  /* USER CODE BEGIN 2 */
-  // app_config.uart = &huart2;
   
+  /* USER CODE BEGIN 2 */
+  
+#ifdef DEBUG
+  serial_print(&huart2, "\r\nBooting app on NUCLEO_F446RE\r\n");
+#endif
+
+  app_config_t app_config = {
+    .i2c_handle = &hi2c2,
+    .dcmi_handle = &hdcmi,
+    .image_resolution = CAMERA_RES_160X120,
+    .pwdn_gpio_port = PWDN_GPIO_Port,
+    .pwdn_gpio_pin = PWDN_Pin,
+    .reset_gpio_port = RESET_GPIO_Port,
+    .reset_gpio_pin = RESET_Pin,
+    .button_gpio_port = B1_GPIO_Port,
+    .button_gpio_pin = B1_Pin,
+    .uart = &huart2,
+  };
+
+  app_init(&app_config);
+  
+  HAL_Delay(10U);
+
+#ifdef DEBUG
+  serial_print(&huart2, "App init complete\r\n");
+  serial_print(&huart2, "Press B1 to capture one JPEG frame\r\n");
+#endif
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    // run_app(&app_config);
-    // HAL_Delay(500U);
-
-    
+    app_run();
 
     /* USER CODE END WHILE */
 
@@ -224,7 +247,7 @@ static void MX_I2C2_Init(void)
 
   /* USER CODE END I2C2_Init 1 */
   hi2c2.Instance = I2C2;
-  hi2c2.Init.ClockSpeed = 100000;
+  hi2c2.Init.ClockSpeed = 1000;
   hi2c2.Init.DutyCycle = I2C_DUTYCYCLE_2;
   hi2c2.Init.OwnAddress1 = 0;
   hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;

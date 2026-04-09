@@ -36,7 +36,7 @@
 			<locationURI>$%7BPARENT-1-PROJECT_LOC%7D/app/include</locationURI>
 		</link>
 		<link>
-			<name>App/Src</name>
+			<name>App/src</name>
 			<type>2</type>
 			<locationURI>$%7BPARENT-1-PROJECT_LOC%7D/app/src</locationURI>
 		</link>
