@@ -129,7 +129,7 @@ void app_init(const app_config_t *config)
 
     app_config = *config;
 
-    frame_buffer_size = (uint32_t)app_config.image_resolution;
+    frame_buffer_size = camera_get_frame_buffer_size(app_config.image_resolution);
 
     if (frame_buffer != NULL) {
         free(frame_buffer);
@@ -164,19 +164,24 @@ void app_init(const app_config_t *config)
     camera_set_contrast(CAMERA_CONTRAST_0);
     camera_set_saturation(CAMERA_SATURATION_0);
     camera_set_brightness(CAMERA_BRIGHTNESS_0);
-    camera_set_white_balance(WHITE_BALANCE_SIMPLE);
+    camera_set_white_balance(WHITE_BALANCE_AUTO);
     camera_set_light_mode(CAMERA_LIGHT_MODE_AUTO);
 }
 
 void app_run(void)
 {
+    if ((frame_buffer == NULL) || (frame_buffer_size == 0U)) {
+        return;
+    }
 
     if (HAL_GPIO_ReadPin(app_config.button_gpio_port,
                          app_config.button_gpio_pin) == GPIO_PIN_SET) {
 
         // Trigger once per physical press and re-arm only after the button is released
         if (button_armed == 1U) {
-            uint16_t size;
+            uint32_t length;
+            uint16_t width = 0U;
+            uint16_t height = 0U;
 
 #ifdef DEBUG
             serial_print(app_config.uart, "Button press detected\r\n");
@@ -184,31 +189,36 @@ void app_run(void)
 #endif
             memset(frame_buffer, 0, frame_buffer_size);
 
-            size = camera_capture_frame(frame_buffer, (int)frame_buffer_size);
+            length = camera_capture_frame(frame_buffer, frame_buffer_size);
+            width = camera_get_width(app_config.image_resolution);
+            height = camera_get_height(app_config.image_resolution);
 
 #ifdef DEBUG
             serial_print(app_config.uart, "Snapshot finished\r\n");
             serial_print(app_config.uart, "Image size: %u bytes\r\n",
-                         (unsigned int)size);
+                         (unsigned int)length);
 #endif
 
-            if (size > 0U) {
+            if (length > 0U) {
 
                 // TODO: Implement NN inference
 
 #ifdef DEBUG
                 HAL_StatusTypeDef status;
 
+                serial_print(app_config.uart,
+                             "FRAME_BEGIN %u %u %u\r\n",
+                             (unsigned int)width, (unsigned int)height,
+                             (unsigned int)length);
                 status =
-                    serial_send_image(app_config.uart, frame_buffer, size);
-
-                serial_print(app_config.uart, "HAL_UART_Transmit_DMA: %d\r\n",
+                    serial_send_image(app_config.uart, frame_buffer, length);
+                serial_print(app_config.uart, "\r\nFRAME_END status=%d\r\n",
                              (int)status);
 #endif
             } else {
 #ifdef DEBUG
                 serial_print(app_config.uart,
-                             "JPEG markers not found in frame buffer\r\n");
+                             "Failed to capture frame\r\n");
 #endif
             }
 

@@ -6,11 +6,11 @@ The current focus of this project is hardware bring-up and peripheral alignment:
 - `DCMI` configured for an 8-bit parallel camera
 - `I2C2` configured for SCCB/I2C camera control
 - `PA8 / RCC_MCO1` configured as camera `XCLK`
-- `USART2` configured for logs and JPEG transfer, with TX DMA enabled
+- `USART2` configured for logs and frame transfer, with TX DMA enabled
 - `PB1` and `PB12` configured for camera `PWDN` and `RESET`
-- button-triggered JPEG capture from an `OV2640`
+- button-triggered YUV422 capture from an `OV2640`
 
-The firmware now performs live camera bring-up and button-triggered JPEG capture. When built with `DEBUG`, pressing `B1` captures one frame and sends the JPEG over `USART2`.
+The firmware now performs live camera bring-up and button-triggered YUV422 capture. When built with `DEBUG`, pressing `B1` captures one frame and sends it over `USART2`.
 
 ## Notes
 
@@ -20,20 +20,20 @@ The maximum single `DCMI` DMA transfer size is still constrained by STM32 HAL an
 
 `I2C2` is currently configured at `1 kHz` for debug stability during OV2640 register programming. This is intentionally conservative and should be treated as a bring-up setting, not a final production value.
 
-The current firmware default image size is `160x120` JPEG.
+The current firmware default image size is `160x120` in `YUV422` format.
 
 ## Current firmware behavior
 
 1. Boot and initialize `USART2`, `DCMI`, and `I2C2`
 2. Apply the OV2640 reset and power-up sequence
 3. Probe the camera over SCCB and print `PID` / `VER` in `DEBUG`
-4. Configure the sensor for `160x120` JPEG capture
+4. Configure the sensor for `160x120` YUV422 capture
 5. Wait for the on-board `B1` button
-6. Capture one JPEG frame; when built with `DEBUG`, transmit it over `USART2` using DMA
+6. Capture one YUV422 frame; when built with `DEBUG`, transmit it over `USART2` using DMA
 
 ## Host-side capture
 
-A small host utility is provided at [capture_ov2640_uart.py](/home/user/Projects/stm32_digit_recognition/scripts/capture_ov2640_uart.py). It waits for the firmware ready banner, then saves the next JPEG frame seen on the serial port. This flow requires firmware built with `DEBUG`, because the ready banner and image UART transmit are both `DEBUG`-gated.
+A small host utility is provided at [capture.py](/home/user/Projects/stm32_digit_recognition/scripts/capture.py). It waits for the firmware ready banner, then saves the next YUV422 frame seen on the serial port. This flow requires firmware built with `DEBUG`, because the ready banner and image UART transmit are both `DEBUG`-gated.
 
 Install the host dependency:
 
@@ -44,8 +44,10 @@ pip install -r requirements.txt
 Run the capture tool:
 
 ```bash
-python3 scripts/capture_ov2640_uart.py --port /dev/ttyACM0 --baud 115200 --output capture.jpg
+python3 scripts/capture.py --port /dev/ttyACM0 --baud 115200 --output capture.yuv
 ```
+
+If `--output` is omitted, the script default is `capture.bin`.
 
 When the script prints `Firmware ready. Press B1 to capture one frame.`, press the blue user button on the Nucleo board once.
 
@@ -75,6 +77,7 @@ GPIO | Output | LD2 | PA5 | On-board LED | -
 GPIO | EXTI13 | USER_Btn | PC13 | On-board button | -
 SYS | Serial Wire | SYS_JTCK-SWCLK | PA14 | SWD | -
 SYS | Serial Wire | SYS_JTMS-SWDIO | PA13 | SWD | -
+SYS | Trace debug | SYS_JTDO-SWO | PB3 | SWO | -
 SYS | SysTick | SYS_VS_Systick | VP_SYS_VS_Systick | Virtual | -
 RCC | HSE-External-Oscillator pin reservation | RCC_OSC_IN | PH0/OSC_IN | Crystal pins | -
 RCC | HSE-External-Oscillator pin reservation | RCC_OSC_OUT | PH1/OSC_OUT | Crystal pins | -
@@ -91,9 +94,11 @@ Pixel clock polarity | Active on Rising edge
 Vertical synchronization polarity | Active Low
 Horizontal synchronization polarity | Active Low
 Frequency of frame capture | All frames are captured
-JPEG mode | Enabled
+JPEG mode | Disabled
 Byte select mode | All bytes
+Byte select start | Odd
 Line select mode | All lines
+Line select start | Odd
 
 ## I2C2 configuration
 
@@ -224,8 +229,8 @@ Added `USART2_TX` DMA | `DMA1_Stream6` configured and linked to `huart2` | Align
 Raised USART TX DMA quality | FIFO enabled, full threshold, very high priority | Better matches the reference DMA configuration
 Added camera power-control GPIOs | `PB1 = PWDN`, `PB12 = RESET` | Allows software-controlled sensor bring-up and reset sequencing
 Updated startup output levels | `PWDN = LOW`, `RESET = HIGH` | Prevents holding the camera in reset at boot
-Replaced the static demo path | Firmware now performs live OV2640 init and JPEG capture | This board project is now focused on camera bring-up rather than inference
-Added host-side serial capture script | `scripts/capture_ov2640_uart.py` saves the next JPEG frame from `USART2` | Makes bring-up verification repeatable without manual serial capture
+Replaced the static demo path | Firmware now performs live OV2640 init and YUV422 capture | This board project is now focused on camera bring-up rather than inference
+Added host-side serial capture script | `scripts/capture.py` saves the next YUV422 frame from `USART2` | Makes bring-up verification repeatable without manual serial capture
 Lowered `I2C2` speed for bring-up | `I2C2 = 1000 Hz` | Improves SCCB robustness during the long OV2640 configuration sequence
 Enabled internal I2C pull-ups | `PB10` and `PC12` use `GPIO_PULLUP` | Useful for current bench testing; external pull-ups are still preferable in final hardware
 Expanded README | Hardware configuration is now documented in tables | Makes the local project easier to compare against the reference project

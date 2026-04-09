@@ -104,6 +104,34 @@ typedef struct
 } camera_config_t;
 
 /**
+ * @brief Returns image width for a given resolution enum.
+ *
+ * If an invalid value is provided, defaults to 160.
+ *
+ * @param resolution Value from @ref camera_resolution.
+ * @return Image width in pixels.
+ */
+uint16_t camera_get_width(camera_resolution_t resolution);
+
+/**
+ * @brief Returns image height for a given resolution enum.
+ *
+ * If an invalid value is provided, defaults to 120.
+ *
+ * @param resolution Value from @ref camera_resolution.
+ * @return Image height in pixels.
+ */
+uint16_t camera_get_height(camera_resolution_t resolution);
+
+/**
+ * @brief Returns raw YUV422 frame buffer size in bytes for a resolution.
+ *
+ * @param resolution Value from @ref camera_resolution.
+ * @return Buffer size in bytes for YUV422 (2 bytes per pixel).
+ */
+uint32_t camera_get_frame_buffer_size(camera_resolution_t resolution);
+
+/**
  * @brief Initializes the OV2640 hardware control and SCCB interfaces.
  *
  * Performs PWDN/RESET sequencing, issues a software reset, and clears DCMI
@@ -114,7 +142,7 @@ typedef struct
 void camera_init(const camera_config_t *config);
 
 /**
- * @brief Applies one of the predefined JPEG resolution pipelines.
+ * @brief Applies one of the predefined resolution pipelines.
  *
  * @param resolution Resolution constant from @ref camera_resolution.
  */
@@ -127,10 +155,10 @@ void camera_set_resolution(const camera_resolution_t resolution);
  *
  * @param frame_buffer Destination frame buffer base address.
  * @param transfer_length Transfer length forwarded to HAL_DCMI_Start_DMA().
- * @return JPEG size in bytes (from SOI to EOI, inclusive), or 0 if not found/error.
+ * @return Captured frame size in bytes, or 0 on error.
  */
-uint16_t camera_capture_frame(uint8_t *frame_buffer,
-                              const int transfer_length);
+uint32_t camera_capture_frame(uint8_t *frame_buffer,
+                              uint32_t transfer_length);
 
 /**
  * @brief Applies one special-effect preset.

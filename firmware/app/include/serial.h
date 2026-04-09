@@ -24,6 +24,6 @@ void serial_print(UART_HandleTypeDef *uart, const char *fmt, ...);
  * @return HAL status from HAL_UART_Transmit_DMA
  */
 HAL_StatusTypeDef serial_send_image(UART_HandleTypeDef *uart,
-                                    const uint8_t *buffer, uint16_t size);
+                                    const uint8_t *buffer, uint32_t size);
 
 #endif /* SERIAL_H */

@@ -102,7 +102,6 @@ int main(void)
   MX_USART2_UART_Init();
   MX_DCMI_Init();
   MX_I2C2_Init();
-  
   /* USER CODE BEGIN 2 */
   
 #ifdef DEBUG
@@ -128,7 +127,7 @@ int main(void)
 
 #ifdef DEBUG
   serial_print(&huart2, "App init complete\r\n");
-  serial_print(&huart2, "Press B1 to capture one JPEG frame\r\n");
+  serial_print(&huart2, "Press B1 to capture one frame\r\n");
 #endif
 
   /* USER CODE END 2 */
@@ -216,7 +215,7 @@ static void MX_DCMI_Init(void)
   hdcmi.Init.HSPolarity = DCMI_HSPOLARITY_LOW;
   hdcmi.Init.CaptureRate = DCMI_CR_ALL_FRAME;
   hdcmi.Init.ExtendedDataMode = DCMI_EXTEND_DATA_8B;
-  hdcmi.Init.JPEGMode = DCMI_JPEG_ENABLE;
+  hdcmi.Init.JPEGMode = DCMI_JPEG_DISABLE;
   hdcmi.Init.ByteSelectMode = DCMI_BSM_ALL;
   hdcmi.Init.ByteSelectStart = DCMI_OEBS_ODD;
   hdcmi.Init.LineSelectMode = DCMI_LSM_ALL;

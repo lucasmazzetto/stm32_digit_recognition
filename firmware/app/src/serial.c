@@ -54,17 +54,34 @@ void serial_print(UART_HandleTypeDef *uart, const char *fmt, ...)
 }
 
 HAL_StatusTypeDef serial_send_image(UART_HandleTypeDef *uart,
-                                    const uint8_t *buffer, uint16_t size)
+                                    const uint8_t *buffer, uint32_t size)
 {
-    HAL_StatusTypeDef status;
+    HAL_StatusTypeDef status = HAL_OK;
+    uint32_t offset = 0U;
+    uint16_t chunk_size;
 
     if ((uart == NULL) || (buffer == NULL) || (size == 0U)) {
         return HAL_ERROR;
     }
 
-    status = HAL_UART_Transmit_DMA(uart, (uint8_t *)buffer, size);
-    if (status == HAL_OK) {
+    // HAL UART DMA length is uint16_t; send raw frames in bounded chunks
+    while (offset < size) {
+        uint32_t remaining = size - offset;
+        if (remaining > (uint32_t)UINT16_MAX) {
+            chunk_size = UINT16_MAX;
+        } else {
+            chunk_size = (uint16_t)remaining;
+        }
+
+        status = HAL_UART_Transmit_DMA(uart, (uint8_t *)(buffer + offset),
+                                       chunk_size);
+        if (status != HAL_OK) {
+            return status;
+        }
+
         while (HAL_UART_GetState(uart) != HAL_UART_STATE_READY) {}
+
+        offset += (uint32_t)chunk_size;
     }
 
     return status;

@@ -54,11 +54,6 @@ static const unsigned char camera_reg_yuv422[][2] = {
     {0x33, 0x80}, {0x3C, 0x40}, {0xe1, 0x77}, {0x00, 0x00}, {0xff, 0xff},
 };
 
-static const unsigned char camera_reg_jpeg[][2] = {
-    {0xe0, 0x14}, {0xe1, 0x77}, {0xe5, 0x1f}, {0xd7, 0x03}, {0xda, 0x10},
-    {0xe0, 0x00}, {0xFF, 0x01}, {0x04, 0x08}, {0xff, 0xff},
-};
-
 static const unsigned char camera_reg_resolution_160x120_jpeg[][2] = {
     {0xFF, 0x01}, {0x12, 0x40}, {0x17, 0x11}, {0x18, 0x43}, {0x19, 0x00},
     {0x1a, 0x4b}, {0x32, 0x09}, {0x4f, 0xca}, {0x50, 0xa8}, {0x5a, 0x23},
@@ -469,10 +464,12 @@ static void apply_resolution_profile(const short resolution_profile)
 #ifdef DEBUG
     serial_print(camera_config.uart, "Starting resolution choice \r\n");
 #endif
-    // Apply common JPEG pipeline first, then patch registers for the target resolution
+    // Base OV2640 bring-up sequence (legacy "jpeg_init" name, still required)
     apply_register_table(camera_reg_jpeg_init);
+
+    // Configure sensor DSP for YUV422 output, then apply target resolution
     apply_register_table(camera_reg_yuv422);
-    apply_register_table(camera_reg_jpeg);
+    
     HAL_Delay(10);
     sccb_write_register(0xff, 0x01);
     HAL_Delay(10);
@@ -505,40 +502,6 @@ static void apply_resolution_profile(const short resolution_profile)
 #ifdef DEBUG
     serial_print(camera_config.uart, "Finalize configuration \r\n");
 #endif
-}
-
-/**
- * @brief Scans a frame buffer for JPEG SOI/EOI markers and returns image size.
- *
- * @param buffer Frame buffer bytes.
- * @param buffer_size Number of bytes to scan.
- * @return JPEG size in bytes (from SOI to EOI, inclusive), or 0 if not found.
- */
-static uint16_t get_jpeg_size(const uint8_t *const buffer,
-                              const uint16_t buffer_size)
-{
-    uint16_t index;
-    uint8_t header_found = 0U;
-
-    for (index = 0U; index < (uint16_t)(buffer_size - 1U); ++index) {
-        if ((header_found == 0U) && (buffer[index] == 0xFFU) &&
-            (buffer[index + 1U] == 0xD8U)) {
-            header_found = 1U;
-#ifdef DEBUG
-            serial_print(camera_config.uart, "Found header of JPEG file\r\n");
-#endif
-        }
-
-        if ((header_found == 1U) && (buffer[index] == 0xFFU) &&
-            (buffer[index + 1U] == 0xD9U)) {
-#ifdef DEBUG
-            serial_print(camera_config.uart, "Found EOF of JPEG file\r\n");
-#endif
-            return (uint16_t)(index + 2U);
-        }
-    }
-
-    return 0U;
 }
 
 void camera_init(const camera_config_t *const config)
@@ -613,6 +576,53 @@ void camera_init(const camera_config_t *const config)
 #ifdef DEBUG
     serial_print(camera_config.uart, "camera_init: done\r\n");
 #endif
+}
+
+uint16_t camera_get_width(camera_resolution_t resolution)
+{
+    switch (resolution) {
+        case CAMERA_RES_160X120:
+            return 160U;
+        case CAMERA_RES_320X240:
+            return 320U;
+        case CAMERA_RES_640X480:
+            return 640U;
+        case CAMERA_RES_800X600:
+            return 800U;
+        case CAMERA_RES_1024X768:
+            return 1024U;
+        case CAMERA_RES_1280X960:
+            return 1280U;
+        default:
+            return 160U;
+    }
+}
+
+uint16_t camera_get_height(camera_resolution_t resolution)
+{
+    switch (resolution) {
+        case CAMERA_RES_160X120:
+            return 120U;
+        case CAMERA_RES_320X240:
+            return 240U;
+        case CAMERA_RES_640X480:
+            return 480U;
+        case CAMERA_RES_800X600:
+            return 600U;
+        case CAMERA_RES_1024X768:
+            return 768U;
+        case CAMERA_RES_1280X960:
+            return 960U;
+        default:
+            return 120U;
+    }
+}
+
+uint32_t camera_get_frame_buffer_size(camera_resolution_t resolution)
+{
+    // YUV422 packs two bytes per pixel
+    return (uint32_t)camera_get_width(resolution) *
+           (uint32_t)camera_get_height(resolution) * 2U;
 }
 
 void camera_set_resolution(const camera_resolution_t resolution)
@@ -734,7 +744,7 @@ void camera_set_light_mode(const camera_light_mode_t white_balance_mode)
 #endif
 
     if (white_balance_mode == CAMERA_LIGHT_MODE_AUTO) {
-        camera_set_white_balance(WHITE_BALANCE_AUTO);
+        apply_register_table(camera_reg_white_balance_auto);
     } else if (white_balance_mode == CAMERA_LIGHT_MODE_SUNNY) {
         apply_register_table(camera_reg_white_balance_sunny);
     } else if (white_balance_mode == CAMERA_LIGHT_MODE_CLOUDY) {
@@ -785,14 +795,15 @@ void camera_set_contrast(const camera_contrast_t contrast_level)
     }
 }
 
-uint16_t camera_capture_frame(uint8_t *const frame_buffer,
-                              const int transfer_length)
+uint32_t camera_capture_frame(uint8_t *const frame_buffer,
+                              uint32_t transfer_length)
 {
     const uint32_t frame_buffer_addr = (uint32_t)(uintptr_t)frame_buffer;
 
 #ifdef DEBUG
-    serial_print(camera_config.uart, "camera_capture_frame: start len=%d\r\n",
-                 transfer_length);
+    serial_print(camera_config.uart,
+                 "camera_capture_frame: start len=%lu\r\n",
+                 (unsigned long)transfer_length);
 #endif
 
     const HAL_StatusTypeDef status =
@@ -803,7 +814,7 @@ uint16_t camera_capture_frame(uint8_t *const frame_buffer,
     serial_print(camera_config.uart,
                  "camera_capture_frame: HAL_DCMI_Start_DMA=%d\r\n", status);
 #endif
-    if (status != HAL_OK) {
+    if ((status != HAL_OK) || (transfer_length == 0U)) {
         return 0U;
     }
 
@@ -818,6 +829,5 @@ uint16_t camera_capture_frame(uint8_t *const frame_buffer,
                  "camera_capture_frame: suspend/stop complete\r\n");
 #endif
 
-    return get_jpeg_size((const uint8_t *)frame_buffer,
-                         (uint16_t)transfer_length);
+    return transfer_length;
 }
