@@ -6,6 +6,7 @@
 #include "serial.h"
 #include "stm32f4xx_hal.h"
 
+#include <string.h>
 #include <stddef.h>
 #include <stdio.h>
 
@@ -13,7 +14,6 @@ typedef struct
 {
     I2C_HandleTypeDef *i2c_handle;
     DCMI_HandleTypeDef *dcmi_handle;
-    camera_resolution_t image_resolution;
     GPIO_TypeDef *pwdn_gpio_port;
     uint16_t pwdn_gpio_pin;
     GPIO_TypeDef *reset_gpio_port;

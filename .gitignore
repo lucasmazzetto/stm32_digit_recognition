@@ -86,3 +86,7 @@ Thumbs.db
 # Local tooling files
 .venv/
 .clang-format
+
+# Python cache files
+__pycache__/
+*.py[cod]

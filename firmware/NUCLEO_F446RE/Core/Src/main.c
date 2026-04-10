@@ -111,7 +111,6 @@ int main(void)
   app_config_t app_config = {
     .i2c_handle = &hi2c2,
     .dcmi_handle = &hdcmi,
-    .image_resolution = CAMERA_RES_160X120,
     .pwdn_gpio_port = PWDN_GPIO_Port,
     .pwdn_gpio_pin = PWDN_Pin,
     .reset_gpio_port = RESET_GPIO_Port,

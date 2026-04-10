@@ -4,10 +4,12 @@
 #define SCCB_MAX_RETRIES 3U
 #define SCCB_WRITE_SETTLE_DELAY_MS 2U
 #define SCCB_RECOVERY_DELAY_MS 2U
+#define CAMERA_CAPTURE_TIMEOUT_MS 2000U
+#define CAMERA_DMA_DRAIN_TIMEOUT_MS 100U
 
 static camera_config_t camera_config;
 
-static const unsigned char camera_reg_jpeg_init[][2] = {
+static const unsigned char camera_reg_init[][2] = {
     {0xff, 0x00}, {0x2c, 0xff}, {0x2e, 0xdf}, {0xff, 0x01}, {0x3c, 0x32},
     {0x11, 0x00}, {0x09, 0x02}, {0x04, 0x28}, {0x13, 0xe5}, {0x14, 0x48},
     {0x2c, 0x0c}, {0x33, 0x78}, {0x3a, 0x33}, {0x3b, 0xfB}, {0x3e, 0x00},
@@ -50,11 +52,11 @@ static const unsigned char camera_reg_jpeg_init[][2] = {
 };
 
 static const unsigned char camera_reg_yuv422[][2] = {
-    {0xFF, 0x00}, {0x05, 0x00}, {0xDA, 0x10}, {0xD7, 0x03}, {0xDF, 0x00},
-    {0x33, 0x80}, {0x3C, 0x40}, {0xe1, 0x77}, {0x00, 0x00}, {0xff, 0xff},
+    {0xFF, 0x00}, {0x05, 0x00}, {0xDA, 0x00}, {0xD7, 0x03}, {0x33, 0xA0},
+    {0xE5, 0x1F}, {0xE1, 0x67}, {0x00, 0x00}, {0xff, 0xff},
 };
 
-static const unsigned char camera_reg_resolution_160x120_jpeg[][2] = {
+static const unsigned char camera_reg_resolution_160x120[][2] = {
     {0xFF, 0x01}, {0x12, 0x40}, {0x17, 0x11}, {0x18, 0x43}, {0x19, 0x00},
     {0x1a, 0x4b}, {0x32, 0x09}, {0x4f, 0xca}, {0x50, 0xa8}, {0x5a, 0x23},
     {0x6d, 0x00}, {0x39, 0x12}, {0x35, 0xda}, {0x22, 0x1a}, {0x37, 0xc3},
@@ -62,181 +64,16 @@ static const unsigned char camera_reg_resolution_160x120_jpeg[][2] = {
     {0x0d, 0x87}, {0x0e, 0x41}, {0x4c, 0x00}, {0xFF, 0x00}, {0xe0, 0x04},
     {0xc0, 0x64}, {0xc1, 0x4b}, {0x86, 0x35}, {0x50, 0x92}, {0x51, 0xc8},
     {0x52, 0x96}, {0x53, 0x00}, {0x54, 0x00}, {0x55, 0x00}, {0x57, 0x00},
-    {0x5a, 0x2c}, {0x5b, 0x24}, {0x5c, 0x00}, {0xe0, 0x00}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_resolution_320x240_jpeg[][2] = {
-    {0xff, 0x01}, {0x12, 0x40}, {0x17, 0x11}, {0x18, 0x43}, {0x19, 0x00},
-    {0x1a, 0x4b}, {0x32, 0x09}, {0x4f, 0xca}, {0x50, 0xa8}, {0x5a, 0x23},
-    {0x6d, 0x00}, {0x39, 0x12}, {0x35, 0xda}, {0x22, 0x1a}, {0x37, 0xc3},
-    {0x23, 0x00}, {0x34, 0xc0}, {0x36, 0x1a}, {0x06, 0x88}, {0x07, 0xc0},
-    {0x0d, 0x87}, {0x0e, 0x41}, {0x4c, 0x00}, {0xff, 0x00}, {0xe0, 0x04},
-    {0xc0, 0x64}, {0xc1, 0x4b}, {0x86, 0x35}, {0x50, 0x89}, {0x51, 0xc8},
-    {0x52, 0x96}, {0x53, 0x00}, {0x54, 0x00}, {0x55, 0x00}, {0x57, 0x00},
-    {0x5a, 0x50}, {0x5b, 0x3c}, {0x5c, 0x00}, {0xe0, 0x00}, {0xff, 0xff},
-};
-
-static const unsigned char camera_reg_resolution_640x480_jpeg[][2] = {
-    {0xff, 0x01}, {0x11, 0x01}, {0x12, 0x00}, {0x17, 0x11}, {0x18, 0x75},
-    {0x32, 0x36}, {0x19, 0x01}, {0x1a, 0x97}, {0x03, 0x0f}, {0x37, 0x40},
-    {0x4f, 0xbb}, {0x50, 0x9c}, {0x5a, 0x57}, {0x6d, 0x80}, {0x3d, 0x34},
-    {0x39, 0x02}, {0x35, 0x88}, {0x22, 0x0a}, {0x37, 0x40}, {0x34, 0xa0},
-    {0x06, 0x02}, {0x0d, 0xb7}, {0x0e, 0x01}, {0xff, 0x00}, {0xe0, 0x04},
-    {0xc0, 0xc8}, {0xc1, 0x96}, {0x86, 0x3d}, {0x50, 0x89}, {0x51, 0x90},
-    {0x52, 0x2c}, {0x53, 0x00}, {0x54, 0x00}, {0x55, 0x88}, {0x57, 0x00},
-    {0x5a, 0xa0}, {0x5b, 0x78}, {0x5c, 0x00}, {0xd3, 0x04}, {0xe0, 0x00},
-    {0xff, 0xff},
-};
-
-static const unsigned char camera_reg_resolution_800x600_jpeg[][2] = {
-    {0xFF, 0x01}, {0x11, 0x01}, {0x12, 0x00}, {0x17, 0x11}, {0x18, 0x75},
-    {0x32, 0x36}, {0x19, 0x01}, {0x1a, 0x97}, {0x03, 0x0f}, {0x37, 0x40},
-    {0x4f, 0xbb}, {0x50, 0x9c}, {0x5a, 0x57}, {0x6d, 0x80}, {0x3d, 0x34},
-    {0x39, 0x02}, {0x35, 0x88}, {0x22, 0x0a}, {0x37, 0x40}, {0x34, 0xa0},
-    {0x06, 0x02}, {0x0d, 0xb7}, {0x0e, 0x01}, {0xFF, 0x00}, {0xe0, 0x04},
-    {0xc0, 0xc8}, {0xc1, 0x96}, {0x86, 0x35}, {0x50, 0x89}, {0x51, 0x90},
-    {0x52, 0x2c}, {0x53, 0x00}, {0x54, 0x00}, {0x55, 0x88}, {0x57, 0x00},
-    {0x5a, 0xc8}, {0x5b, 0x96}, {0x5c, 0x00}, {0xd3, 0x02}, {0xe0, 0x00},
-    {0xff, 0xff}};
-
-static const unsigned char camera_reg_resolution_1024x768_jpeg[][2] = {
-    {0xFF, 0x01}, {0x11, 0x01}, {0x12, 0x00}, {0x17, 0x11}, {0x18, 0x75},
-    {0x32, 0x36}, {0x19, 0x01}, {0x1a, 0x97}, {0x03, 0x0f}, {0x37, 0x40},
-    {0x4f, 0xbb}, {0x50, 0x9c}, {0x5a, 0x57}, {0x6d, 0x80}, {0x3d, 0x34},
-    {0x39, 0x02}, {0x35, 0x88}, {0x22, 0x0a}, {0x37, 0x40}, {0x34, 0xa0},
-    {0x06, 0x02}, {0x0d, 0xb7}, {0x0e, 0x01}, {0xFF, 0x00}, {0xc0, 0xC8},
-    {0xc1, 0x96}, {0x8c, 0x00}, {0x86, 0x3D}, {0x50, 0x00}, {0x51, 0x90},
-    {0x52, 0x2C}, {0x53, 0x00}, {0x54, 0x00}, {0x55, 0x88}, {0x5a, 0x00},
-    {0x5b, 0xC0}, {0x5c, 0x01}, {0xd3, 0x02}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_resolution_1280x960_jpeg[][2] = {
-    {0xFF, 0x01}, {0x11, 0x01}, {0x12, 0x00}, {0x17, 0x11}, {0x18, 0x75},
-    {0x32, 0x36}, {0x19, 0x01}, {0x1a, 0x97}, {0x03, 0x0f}, {0x37, 0x40},
-    {0x4f, 0xbb}, {0x50, 0x9c}, {0x5a, 0x57}, {0x6d, 0x80}, {0x3d, 0x34},
-    {0x39, 0x02}, {0x35, 0x88}, {0x22, 0x0a}, {0x37, 0x40}, {0x34, 0xa0},
-    {0x06, 0x02}, {0x0d, 0xb7}, {0x0e, 0x01}, {0xFF, 0x00}, {0xe0, 0x04},
-    {0xc0, 0xc8}, {0xc1, 0x96}, {0x86, 0x3d}, {0x50, 0x00}, {0x51, 0x90},
-    {0x52, 0x2c}, {0x53, 0x00}, {0x54, 0x00}, {0x55, 0x88}, {0x57, 0x00},
-    {0x5a, 0x40}, {0x5b, 0xf0}, {0x5c, 0x01}, {0xd3, 0x02}, {0xe0, 0x00},
-    {0xff, 0xff}};
-
-static const unsigned char camera_reg_contrast_plus2[][2] = {
-    {0xff, 0x00}, {0x7c, 0x00}, {0x7d, 0x04}, {0x7c, 0x07}, {0x7d, 0x20},
-    {0x7d, 0x28}, {0x7d, 0x0c}, {0x7d, 0x06}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_contrast_plus1[][2] = {
-    {0xff, 0x00}, {0x7c, 0x00}, {0x7d, 0x04}, {0x7c, 0x07}, {0x7d, 0x20},
-    {0x7d, 0x24}, {0x7d, 0x16}, {0x7d, 0x06}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_contrast_zero[][2] = {
-    {0xff, 0x00}, {0x7c, 0x00}, {0x7d, 0x04}, {0x7c, 0x07}, {0x7d, 0x20},
-    {0x7d, 0x20}, {0x7d, 0x20}, {0x7d, 0x06}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_contrast_minus1[][2] = {
-    {0xff, 0x00}, {0x7c, 0x00}, {0x7d, 0x04}, {0x7c, 0x07}, {0x7d, 0x20},
-    {0x7d, 0x1c}, {0x7d, 0x2a}, {0x7d, 0x06}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_contrast_minus2[][2] = {
-    {0xff, 0x00}, {0x7c, 0x00}, {0x7d, 0x04}, {0x7c, 0x07}, {0x7d, 0x20},
-    {0x7d, 0x18}, {0x7d, 0x34}, {0x7d, 0x06}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_saturation_plus2[][2] = {
-    {0xff, 0x00}, {0x7c, 0x00}, {0x7d, 0x02}, {0x7c, 0x03},
-    {0x7d, 0x68}, {0x7d, 0x68}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_saturation_plus1[][2] = {
-    {0xff, 0x00}, {0x7c, 0x00}, {0x7d, 0x02}, {0x7c, 0x03},
-    {0x7d, 0x58}, {0x7d, 0x68}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_saturation_zero[][2] = {
-    {0xff, 0x00}, {0x7c, 0x00}, {0x7d, 0x02}, {0x7c, 0x03},
-    {0x7d, 0x48}, {0x7d, 0x48}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_saturation_minus1[][2] = {
-    {0xff, 0x00}, {0x7c, 0x00}, {0x7d, 0x02}, {0x7c, 0x03},
-    {0x7d, 0x38}, {0x7d, 0x38}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_saturation_minus2[][2] = {
-    {0xff, 0x00}, {0x7c, 0x00}, {0x7d, 0x02}, {0x7c, 0x03},
-    {0x7d, 0x28}, {0x7d, 0x28}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_brightness_plus2[][2] = {
-    {0xff, 0x00}, {0x7c, 0x00}, {0x7d, 0x04}, {0x7c, 0x09},
-    {0x7d, 0x40}, {0x7d, 0x00}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_brightness_plus1[][2] = {
-    {0xff, 0x00}, {0x7c, 0x00}, {0x7d, 0x04}, {0x7c, 0x09},
-    {0x7d, 0x30}, {0x7d, 0x00}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_brightness_zero[][2] = {
-    {0xff, 0x00}, {0x7c, 0x00}, {0x7d, 0x04}, {0x7c, 0x09},
-    {0x7d, 0x20}, {0x7d, 0x00}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_brightness_minus1[][2] = {
-    {0xff, 0x00}, {0x7c, 0x00}, {0x7d, 0x04}, {0x7c, 0x09},
-    {0x7d, 0x10}, {0x7d, 0x00}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_brightness_minus2[][2] = {
-    {0xff, 0x00}, {0x7c, 0x00}, {0x7d, 0x04}, {0x7c, 0x09},
-    {0x7d, 0x00}, {0x7d, 0x00}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_effect_normal[][2] = {
-    {0xff, 0x00}, {0x7c, 0x00}, {0x7d, 0x00}, {0x7c, 0x05},
-    {0x7d, 0x80}, {0x7d, 0x80}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_effect_antique[][2] = {
-    {0xff, 0x00}, {0x7c, 0x00}, {0x7d, 0x18}, {0x7c, 0x05},
-    {0x7d, 0x40}, {0x7d, 0xa6}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_effect_black_negative[][2] = {
-    {0xff, 0x00}, {0x7c, 0x00}, {0x7d, 0x58}, {0x7c, 0x05},
-    {0x7d, 0x80}, {0x7d, 0x80}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_effect_bluish[][2] = {
-    {0xff, 0x00}, {0x7c, 0x00}, {0x7d, 0x18}, {0x7c, 0x05},
-    {0x7d, 0xa0}, {0x7d, 0x40}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_effect_black_white[][2] = {
-    {0xff, 0x00}, {0x7c, 0x00}, {0x7d, 0x18}, {0x7c, 0x05},
-    {0x7d, 0x80}, {0x7d, 0x80}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_effect_negative[][2] = {
-    {0xff, 0x00}, {0x7c, 0x00}, {0x7d, 0x40}, {0x7c, 0x05},
-    {0x7d, 0x80}, {0x7d, 0x80}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_effect_greenish[][2] = {
-    {0xff, 0x00}, {0x7c, 0x00}, {0x7d, 0x18}, {0x7c, 0x05},
-    {0x7d, 0x40}, {0x7d, 0x40}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_effect_reddish[][2] = {
-    {0xff, 0x00}, {0x7c, 0x00}, {0x7d, 0x18}, {0x7c, 0x05},
-    {0x7d, 0x40}, {0x7d, 0xc0}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_white_balance_auto[][2] = {
-    {0xff, 0x00}, {0xc7, 0x00}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_white_balance_sunny[][2] = {
-    {0xff, 0x00}, {0xc7, 0x40}, {0xcc, 0x5e},
-    {0xcd, 0x41}, {0xce, 0x54}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_white_balance_cloudy[][2] = {
-    {0xff, 0x00}, {0xc7, 0x40}, {0xcc, 0x65},
-    {0xcd, 0x41}, {0xce, 0x4f}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_white_balance_office[][2] = {
-    {0xff, 0x00}, {0xc7, 0x40}, {0xcc, 0x52},
-    {0xcd, 0x41}, {0xce, 0x66}, {0xff, 0xff}};
-
-static const unsigned char camera_reg_white_balance_home[][2] = {
-    {0xff, 0x00}, {0xc7, 0x40}, {0xcc, 0x42},
-    {0xcd, 0x3f}, {0xce, 0x71}, {0xff, 0xff}};
+    {0x5a, 0x28}, {0x5b, 0x1e}, {0x5c, 0x00}, {0xe0, 0x00}, {0xff, 0xff}};
 
 /**
  * @brief Stops DCMI capture and waits briefly for peripheral stabilization.
  */
 static void stop_capture(void)
 {
-    // Give DCMI a short settle period before next start/stop transition
+    // Stop any ongoing capture before reconfiguring or starting a new snapshot
     HAL_DCMI_Stop(camera_config.dcmi_handle);
+    // Short settle delay avoids immediate start/stop race on the peripheral
     HAL_Delay(10);
 
 #ifdef DEBUG
@@ -256,10 +93,11 @@ static short sccb_write_register(const uint8_t reg_addr, const uint8_t data)
     short operation_status = 0;
     uint8_t buffer[2] = {0};
 
-    // SCCB write payload: first byte is register address, second is register value
+    // SCCB write payload packs register address and value in one transfer
     buffer[0] = reg_addr;
     buffer[1] = data;
 
+    // OV2640 SCCB write address is 0x60 in 8-bit HAL address format
     const HAL_StatusTypeDef hal_status = HAL_I2C_Master_Transmit(
         camera_config.i2c_handle, (uint16_t)0x60, buffer, 2, 100);
 
@@ -290,7 +128,7 @@ static short sccb_read_register(uint8_t reg_addr, uint8_t *const out_value)
     short operation_status = 0;
     HAL_StatusTypeDef hal_status;
 
-    // SCCB read is a write(register address) followed by a single-byte read
+    // SCCB read flow: write target register first, then issue a 1-byte read
     hal_status = HAL_I2C_Master_Transmit(camera_config.i2c_handle,
                                          (uint16_t)0x60, &reg_addr, 1, 100);
     if (hal_status == HAL_OK) {
@@ -320,6 +158,7 @@ static void sccb_recover_bus(void)
 #ifdef DEBUG
     serial_print(camera_config.uart, "SCCB: recovering I2C2 peripheral\r\n");
 #endif
+    // Reinitialize I2C peripheral to recover from stuck bus or NACK storms
     HAL_I2C_DeInit(camera_config.i2c_handle);
     HAL_Delay(SCCB_RECOVERY_DELAY_MS);
     HAL_I2C_Init(camera_config.i2c_handle);
@@ -338,6 +177,7 @@ static short sccb_write_register_retry(const uint8_t reg_addr,
 {
     uint8_t attempt;
 
+    // Retry writes to tolerate transient SCCB/I2C timing issues
     for (attempt = 0U; attempt < SCCB_MAX_RETRIES; ++attempt) {
         if (sccb_write_register(reg_addr, data) == 1) {
             return 1;
@@ -366,6 +206,7 @@ static short sccb_read_register_retry(const uint8_t reg_addr,
 {
     uint8_t attempt;
 
+    // Retry reads with bus recovery when read transaction fails
     for (attempt = 0U; attempt < SCCB_MAX_RETRIES; ++attempt) {
         if (sccb_read_register(reg_addr, out_value) == 1) {
             return 1;
@@ -418,6 +259,7 @@ static void apply_register_table(const unsigned char register_table[][2])
         if (reg_addr == 0xff && data == 0xff) {
             break;
         }
+        // Write one register and continue even if later verify fails
         write_ok = sccb_write_register_retry(reg_addr, data);
 #ifdef DEBUG
         serial_print(camera_config.uart,
@@ -454,58 +296,9 @@ static void apply_register_table(const unsigned char register_table[][2])
     }
 }
 
-/**
- * @brief Internal resolution switch used by camera_set_resolution().
- *
- * @param resolution_profile Internal resolution index in the range [0, 5].
- */
-static void apply_resolution_profile(const short resolution_profile)
-{
-#ifdef DEBUG
-    serial_print(camera_config.uart, "Starting resolution choice \r\n");
-#endif
-    // Base OV2640 bring-up sequence (legacy "jpeg_init" name, still required)
-    apply_register_table(camera_reg_jpeg_init);
-
-    // Configure sensor DSP for YUV422 output, then apply target resolution
-    apply_register_table(camera_reg_yuv422);
-    
-    HAL_Delay(10);
-    sccb_write_register(0xff, 0x01);
-    HAL_Delay(10);
-    sccb_write_register(0x15, 0x00);
-
-    switch (resolution_profile) {
-        case 0:
-            apply_register_table(camera_reg_resolution_160x120_jpeg);
-            break;
-        case 1:
-            apply_register_table(camera_reg_resolution_320x240_jpeg);
-            break;
-        case 2:
-            apply_register_table(camera_reg_resolution_640x480_jpeg);
-            break;
-        case 3:
-            apply_register_table(camera_reg_resolution_800x600_jpeg);
-            break;
-        case 4:
-            apply_register_table(camera_reg_resolution_1024x768_jpeg);
-            break;
-        case 5:
-            apply_register_table(camera_reg_resolution_1280x960_jpeg);
-            break;
-        default:
-            apply_register_table(camera_reg_resolution_160x120_jpeg);
-            break;
-    }
-
-#ifdef DEBUG
-    serial_print(camera_config.uart, "Finalize configuration \r\n");
-#endif
-}
-
 void camera_init(const camera_config_t *const config)
 {
+    // Store handles and GPIO mapping for runtime camera operations
     camera_config = *config;
 
 #ifdef DEBUG
@@ -513,7 +306,7 @@ void camera_init(const camera_config_t *const config)
     serial_print(camera_config.uart, "camera_init: forcing PWDN low\r\n");
 #endif
 
-    // Drive PWDN low to enable normal operation
+    // Drive PWDN low so camera leaves power-down mode
     HAL_GPIO_WritePin(camera_config.pwdn_gpio_port,
                       camera_config.pwdn_gpio_pin, GPIO_PIN_RESET);
 
@@ -521,7 +314,7 @@ void camera_init(const camera_config_t *const config)
     serial_print(camera_config.uart, "camera_init: hardware reset low\r\n");
 #endif
 
-    // Force a clean hardware reboot
+    // Assert RESET low to start from a known camera state
     HAL_GPIO_WritePin(camera_config.reset_gpio_port,
                       camera_config.reset_gpio_pin, GPIO_PIN_RESET);
 
@@ -531,18 +324,18 @@ void camera_init(const camera_config_t *const config)
     serial_print(camera_config.uart, "camera_init: hardware reset high\r\n");
 #endif
 
-    // Release reset and wait for internal clocks/registers to stabilize
+    // Release RESET and wait for internal clocks/registers to stabilize
     HAL_GPIO_WritePin(camera_config.reset_gpio_port,
                       camera_config.reset_gpio_pin, GPIO_PIN_SET);
     HAL_Delay(100);
 
-    // Software reset: reset all registers to default values
+    // Perform software reset to restore OV2640 internal defaults
 #ifdef DEBUG
     serial_print(camera_config.uart,
                  "camera_init: sending software reset\r\n");
 #endif
 
-    // Select register bank 1 before issuing software reset
+    // Select bank 1 before writing COM7 reset bit
 #ifdef DEBUG
     const short bank_select_status = sccb_write_register(0xff, 0x01);
     const short reset_status = sccb_write_register(0x12, 0x80);
@@ -569,259 +362,138 @@ void camera_init(const camera_config_t *const config)
                  "camera_init: stopping DCMI before capture\r\n");
 #endif
 
-    // Stop DCMI clear buffer
+    // Ensure DCMI is idle before applying camera register profile
     stop_capture();
-    camera_set_resolution(camera_config.image_resolution);
 
 #ifdef DEBUG
+    serial_print(camera_config.uart, "Applying fixed profile 160x120 YUV422\r\n");
+#endif
+    // Apply vendor initialization table before output format setup
+    apply_register_table(camera_reg_init);
+
+    // Switch DSP output path to YUV422
+    apply_register_table(camera_reg_yuv422);
+
+    // Ensure register bank and output control are in expected state
+    HAL_Delay(10);
+    sccb_write_register(0xff, 0x01);
+    HAL_Delay(10);
+    sccb_write_register(0x15, 0x00);
+    // Apply fixed 160x120 windowing/scaling registers
+    apply_register_table(camera_reg_resolution_160x120);
+
+#ifdef DEBUG
+    serial_print(camera_config.uart, "Finalize configuration\r\n");
     serial_print(camera_config.uart, "camera_init: done\r\n");
 #endif
-}
-
-uint16_t camera_get_width(camera_resolution_t resolution)
-{
-    switch (resolution) {
-        case CAMERA_RES_160X120:
-            return 160U;
-        case CAMERA_RES_320X240:
-            return 320U;
-        case CAMERA_RES_640X480:
-            return 640U;
-        case CAMERA_RES_800X600:
-            return 800U;
-        case CAMERA_RES_1024X768:
-            return 1024U;
-        case CAMERA_RES_1280X960:
-            return 1280U;
-        default:
-            return 160U;
-    }
-}
-
-uint16_t camera_get_height(camera_resolution_t resolution)
-{
-    switch (resolution) {
-        case CAMERA_RES_160X120:
-            return 120U;
-        case CAMERA_RES_320X240:
-            return 240U;
-        case CAMERA_RES_640X480:
-            return 480U;
-        case CAMERA_RES_800X600:
-            return 600U;
-        case CAMERA_RES_1024X768:
-            return 768U;
-        case CAMERA_RES_1280X960:
-            return 960U;
-        default:
-            return 120U;
-    }
-}
-
-uint32_t camera_get_frame_buffer_size(camera_resolution_t resolution)
-{
-    // YUV422 packs two bytes per pixel
-    return (uint32_t)camera_get_width(resolution) *
-           (uint32_t)camera_get_height(resolution) * 2U;
-}
-
-void camera_set_resolution(const camera_resolution_t resolution)
-{
-#ifdef DEBUG
-    serial_print(camera_config.uart, "camera_set_resolution: %u\r\n",
-                 (unsigned int)resolution);
-#endif
-    switch (resolution) {
-
-        case CAMERA_RES_160X120:
-            camera_config.image_resolution = CAMERA_RES_160X120;
-            apply_resolution_profile(0);
-            break;
-
-        case CAMERA_RES_320X240:
-            camera_config.image_resolution = CAMERA_RES_320X240;
-            apply_resolution_profile(1);
-            break;
-
-        case CAMERA_RES_640X480:
-            camera_config.image_resolution = CAMERA_RES_640X480;
-            apply_resolution_profile(2);
-            break;
-
-        case CAMERA_RES_800X600:
-            camera_config.image_resolution = CAMERA_RES_800X600;
-            apply_resolution_profile(3);
-            break;
-
-        case CAMERA_RES_1024X768:
-            camera_config.image_resolution = CAMERA_RES_1024X768;
-            apply_resolution_profile(4);
-            break;
-
-        case CAMERA_RES_1280X960:
-            camera_config.image_resolution = CAMERA_RES_1280X960;
-            apply_resolution_profile(5);
-            break;
-        default:
-            camera_config.image_resolution = CAMERA_RES_160X120;
-            apply_resolution_profile(0);
-#ifdef DEBUG
-            serial_print(camera_config.uart,
-                         "camera_set_resolution: invalid value, fallback to "
-                         "160x120\r\n");
-#endif
-            break;
-    }
-}
-
-void camera_set_special_effect(const camera_special_effect_t effect)
-{
-#ifdef DEBUG
-    serial_print(camera_config.uart, "Special effect value:%d\r\n", effect);
-#endif
-    if (effect == CAMERA_SPECIAL_EFFECT_ANTIQUE) {
-        apply_register_table(camera_reg_effect_antique);
-    } else if (effect == CAMERA_SPECIAL_EFFECT_BLUISH) {
-        apply_register_table(camera_reg_effect_bluish);
-    } else if (effect == CAMERA_SPECIAL_EFFECT_GREENISH) {
-        apply_register_table(camera_reg_effect_greenish);
-    } else if (effect == CAMERA_SPECIAL_EFFECT_REDDISH) {
-        apply_register_table(camera_reg_effect_reddish);
-    } else if (effect == CAMERA_SPECIAL_EFFECT_BLACK_WHITE) {
-        apply_register_table(camera_reg_effect_black_white);
-    } else if (effect == CAMERA_SPECIAL_EFFECT_NEGATIVE) {
-        apply_register_table(camera_reg_effect_negative);
-    } else if (effect == CAMERA_SPECIAL_EFFECT_NEGATIVE_BLACK_WHITE) {
-        apply_register_table(camera_reg_effect_black_negative);
-    } else if (effect == CAMERA_SPECIAL_EFFECT_NORMAL) {
-        apply_register_table(camera_reg_effect_normal);
-    }
-}
-
-void camera_set_white_balance(
-    const camera_white_balance_mode_t white_balance_mode)
-{
-#ifdef DEBUG
-    serial_print(camera_config.uart, "White balance mode value:%d\r\n",
-                 white_balance_mode);
-#endif
-
-    sccb_write_register(0xff, 0x00);
-    HAL_Delay(1);
-
-    if (white_balance_mode == WHITE_BALANCE_AUTO) {
-        sccb_write_register(0xc7, 0x00);
-    } else {
-        sccb_write_register(0xc7, 0x10);
-    }
-}
-
-void camera_set_brightness(const camera_brightness_t brightness_level)
-{
-#ifdef DEBUG
-    serial_print(camera_config.uart, "Brightness value:%d\r\n",
-                 brightness_level);
-#endif
-
-    if (brightness_level == CAMERA_BRIGHTNESS_0) {
-        apply_register_table(camera_reg_brightness_zero);
-    } else if (brightness_level == CAMERA_BRIGHTNESS_1) {
-        apply_register_table(camera_reg_brightness_plus1);
-    } else if (brightness_level == CAMERA_BRIGHTNESS_2) {
-        apply_register_table(camera_reg_brightness_plus2);
-    } else if (brightness_level == CAMERA_BRIGHTNESS_3) {
-        apply_register_table(camera_reg_brightness_minus1);
-    } else if (brightness_level == CAMERA_BRIGHTNESS_4) {
-        apply_register_table(camera_reg_brightness_minus2);
-    }
-}
-
-void camera_set_light_mode(const camera_light_mode_t white_balance_mode)
-{
-#ifdef DEBUG
-    serial_print(camera_config.uart, "Light mode value:%d\r\n",
-                 white_balance_mode);
-#endif
-
-    if (white_balance_mode == CAMERA_LIGHT_MODE_AUTO) {
-        apply_register_table(camera_reg_white_balance_auto);
-    } else if (white_balance_mode == CAMERA_LIGHT_MODE_SUNNY) {
-        apply_register_table(camera_reg_white_balance_sunny);
-    } else if (white_balance_mode == CAMERA_LIGHT_MODE_CLOUDY) {
-        apply_register_table(camera_reg_white_balance_cloudy);
-    } else if (white_balance_mode == CAMERA_LIGHT_MODE_OFFICE) {
-        apply_register_table(camera_reg_white_balance_office);
-    } else if (white_balance_mode == CAMERA_LIGHT_MODE_HOME) {
-        apply_register_table(camera_reg_white_balance_home);
-    }
-}
-
-void camera_set_saturation(const camera_saturation_t saturation_level)
-{
-#ifdef DEBUG
-    serial_print(camera_config.uart, "Saturation value:%d\r\n",
-                 saturation_level);
-#endif
-
-    if (saturation_level == CAMERA_SATURATION_0) {
-        apply_register_table(camera_reg_saturation_zero);
-    } else if (saturation_level == CAMERA_SATURATION_1) {
-        apply_register_table(camera_reg_saturation_plus1);
-    } else if (saturation_level == CAMERA_SATURATION_2) {
-        apply_register_table(camera_reg_saturation_plus2);
-    } else if (saturation_level == CAMERA_SATURATION_3) {
-        apply_register_table(camera_reg_saturation_minus1);
-    } else if (saturation_level == CAMERA_SATURATION_4) {
-        apply_register_table(camera_reg_saturation_minus2);
-    }
-}
-
-void camera_set_contrast(const camera_contrast_t contrast_level)
-{
-#ifdef DEBUG
-    serial_print(camera_config.uart, "Contrast value:%d\r\n", contrast_level);
-#endif
-
-    if (contrast_level == CAMERA_CONTRAST_0) {
-        apply_register_table(camera_reg_contrast_zero);
-    } else if (contrast_level == CAMERA_CONTRAST_1) {
-        apply_register_table(camera_reg_contrast_plus1);
-    } else if (contrast_level == CAMERA_CONTRAST_2) {
-        apply_register_table(camera_reg_contrast_plus2);
-    } else if (contrast_level == CAMERA_CONTRAST_3) {
-        apply_register_table(camera_reg_contrast_minus1);
-    } else if (contrast_level == CAMERA_CONTRAST_4) {
-        apply_register_table(camera_reg_contrast_minus2);
-    }
 }
 
 uint32_t camera_capture_frame(uint8_t *const frame_buffer,
                               uint32_t transfer_length)
 {
     const uint32_t frame_buffer_addr = (uint32_t)(uintptr_t)frame_buffer;
+    const uint32_t transfer_words = transfer_length / 4U;
+    const uint32_t transfer_remainder = transfer_length % 4U;
+    DMA_HandleTypeDef *dma_handle;
+    uint32_t start_tick;
 
 #ifdef DEBUG
     serial_print(camera_config.uart,
-                 "camera_capture_frame: start len=%lu\r\n",
-                 (unsigned long)transfer_length);
+                 "camera_capture_frame: start len=%lu bytes (%lu words)\r\n",
+                 (unsigned long)transfer_length,
+                 (unsigned long)transfer_words);
 #endif
 
+    // HAL DCMI DMA length unit is 32-bit words from DCMI DR
+    if ((transfer_length == 0U) || (transfer_words == 0U) ||
+        (transfer_remainder != 0U)) {
+#ifdef DEBUG
+        serial_print(camera_config.uart,
+                     "camera_capture_frame: invalid transfer length=%lu "
+                     "(must be non-zero and multiple of 4)\r\n",
+                     (unsigned long)transfer_length);
+#endif
+        return 0U;
+    }
+
+    // Clear stale DCMI flags so wait loop observes the new frame only
+    __HAL_DCMI_CLEAR_FLAG(camera_config.dcmi_handle,
+                          DCMI_FLAG_FRAMERI | DCMI_FLAG_OVRRI |
+                              DCMI_FLAG_ERRRI | DCMI_FLAG_VSYNCRI |
+                              DCMI_FLAG_LINERI);
+
+    // Start one snapshot transfer into the provided frame buffer
     const HAL_StatusTypeDef status =
         HAL_DCMI_Start_DMA(camera_config.dcmi_handle, DCMI_MODE_SNAPSHOT,
-                           frame_buffer_addr, transfer_length);
+                           frame_buffer_addr, transfer_words);
 
 #ifdef DEBUG
     serial_print(camera_config.uart,
                  "camera_capture_frame: HAL_DCMI_Start_DMA=%d\r\n", status);
 #endif
-    if ((status != HAL_OK) || (transfer_length == 0U)) {
+
+    if (status != HAL_OK) {
         return 0U;
     }
 
-    // Fixed wait keeps behavior deterministic when frame-complete interrupt flow is not used
-    HAL_Delay(2000);
+    // Wait for frame-complete instead of fixed delay to avoid partial frames
+    start_tick = HAL_GetTick();
+
+    while (__HAL_DCMI_GET_FLAG(camera_config.dcmi_handle, DCMI_FLAG_FRAMERI) ==
+           RESET) {
+
+        // Abort early on hardware overrun or DCMI capture errors
+        if ((__HAL_DCMI_GET_FLAG(camera_config.dcmi_handle, DCMI_FLAG_OVRRI) !=
+             RESET) ||
+            (__HAL_DCMI_GET_FLAG(camera_config.dcmi_handle, DCMI_FLAG_ERRRI) !=
+             RESET)) {
+
+#ifdef DEBUG
+            serial_print(camera_config.uart,
+                         "camera_capture_frame: DCMI error/overrun\r\n");
+#endif
+
+            HAL_DCMI_Stop(camera_config.dcmi_handle);
+            return 0U;
+        }
+
+        // Timeout protects main loop from hanging if frame complete never arrives
+        if ((HAL_GetTick() - start_tick) > CAMERA_CAPTURE_TIMEOUT_MS) {
+#ifdef DEBUG
+            serial_print(camera_config.uart,
+                         "camera_capture_frame: frame timeout\r\n");
+#endif
+            HAL_DCMI_Stop(camera_config.dcmi_handle);
+            return 0U;
+        }
+    }
+
+    // FRAMERI can assert before DMA fully drains FIFO into memory
+    dma_handle = camera_config.dcmi_handle->DMA_Handle;
+    if (dma_handle != NULL) {
+        start_tick = HAL_GetTick();
+
+        // Wait until DMA engine is ready and no bytes remain pending
+        while ((HAL_DMA_GetState(dma_handle) != HAL_DMA_STATE_READY) ||
+               (__HAL_DMA_GET_COUNTER(dma_handle) != 0U)) {
+
+            // If drain wait times out, continue with stop and report in DEBUG
+            if ((HAL_GetTick() - start_tick) > CAMERA_DMA_DRAIN_TIMEOUT_MS) {
+#ifdef DEBUG
+                serial_print(camera_config.uart,
+                             "camera_capture_frame: DMA drain timeout, "
+                             "state=%d ndtr=%lu\r\n",
+                             (int)HAL_DMA_GetState(dma_handle),
+                             (unsigned long)__HAL_DMA_GET_COUNTER(dma_handle));
+#endif
+                break;
+            }
+        }
+    }
 
     HAL_DCMI_Suspend(camera_config.dcmi_handle);
+
+    // Stop snapshot so next capture always starts from a clean state
     HAL_DCMI_Stop(camera_config.dcmi_handle);
 
 #ifdef DEBUG
@@ -829,5 +501,5 @@ uint32_t camera_capture_frame(uint8_t *const frame_buffer,
                  "camera_capture_frame: suspend/stop complete\r\n");
 #endif
 
-    return transfer_length;
+    return transfer_words * 4U;
 }

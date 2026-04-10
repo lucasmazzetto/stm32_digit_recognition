@@ -14,6 +14,19 @@ READY_MARKER = b"Press B1 to capture one frame"
 FRAME_BEGIN_RE = re.compile(r"^FRAME_BEGIN\s+(\d+)\s+(\d+)\s+(\d+)$")
 
 
+def write_pgm(path: Path, width: int, height: int, payload: bytes):
+    """
+    @brief Writes an 8-bit grayscale image as binary PGM (P5).
+
+    @param path Destination .pgm file path.
+    @param width Image width in pixels.
+    @param height Image height in pixels.
+    @param payload Grayscale pixel bytes (width*height).
+    """
+    header = f"P5\n{width} {height}\n255\n".encode("ascii")
+    path.write_bytes(header + payload)
+
+
 def wait_for_ready(ser: serial.Serial, timeout_s: float):
     """
     @brief Waits for the firmware ready marker on the serial stream.
@@ -119,8 +132,8 @@ def main():
     parser.add_argument('--baud', type=int, default=115200,
                         help='Serial baud rate.')
 
-    parser.add_argument('--output', type=str, default='capture.bin',
-                        help='Output raw frame file path.')
+    parser.add_argument('--output', type=str, default='capture.pgm',
+                        help='Output grayscale PGM file path.')
 
     parser.add_argument('--init-timeout', type=float, default=60.0,
                         help='Seconds to wait for the firmware ready message.')
@@ -144,9 +157,22 @@ def main():
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    output_path.write_bytes(payload)
-    print(f"Saved frame to {output_path}")
     print(f"Resolution: {width}x{height}, bytes: {len(payload)}")
+    expected_size = width * height
+    if len(payload) != expected_size:
+        print(
+            f"Error: expected grayscale payload with {expected_size} bytes, "
+            f"got {len(payload)} bytes.",
+            file=sys.stderr,
+        )
+        return 2
+
+    if output_path.suffix.lower() != ".pgm":
+        output_path = output_path.with_suffix(".pgm")
+
+    write_pgm(output_path, width, height, payload)
+    print(f"Saved grayscale image to {output_path}")
+
     return 0
 
 
