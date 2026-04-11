@@ -471,6 +471,7 @@ uint32_t camera_capture_frame(uint8_t *const frame_buffer,
     // FRAMERI can assert before DMA fully drains FIFO into memory
     dma_handle = camera_config.dcmi_handle->DMA_Handle;
     if (dma_handle != NULL) {
+        uint8_t dma_drain_timed_out = 0U;
         start_tick = HAL_GetTick();
 
         // Wait until DMA engine is ready and no bytes remain pending
@@ -479,6 +480,7 @@ uint32_t camera_capture_frame(uint8_t *const frame_buffer,
 
             // If drain wait times out, continue with stop and report in DEBUG
             if ((HAL_GetTick() - start_tick) > CAMERA_DMA_DRAIN_TIMEOUT_MS) {
+                dma_drain_timed_out = 1U;
 #ifdef DEBUG
                 serial_print(camera_config.uart,
                              "camera_capture_frame: DMA drain timeout, "
@@ -488,6 +490,12 @@ uint32_t camera_capture_frame(uint8_t *const frame_buffer,
 #endif
                 break;
             }
+        }
+
+        // Minimal safety fix: reject frame when DMA drain timeout occurs
+        if (dma_drain_timed_out == 1U) {
+            HAL_DCMI_Stop(camera_config.dcmi_handle);
+            return 0U;
         }
     }
 
