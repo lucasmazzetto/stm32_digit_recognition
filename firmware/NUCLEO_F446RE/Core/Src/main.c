@@ -21,8 +21,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "convnet.h"
-#include <stdio.h>
+#include "app.h"
+#include "serial.h"
 
 /* USER CODE END Includes */
 
@@ -42,141 +42,31 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+DCMI_HandleTypeDef hdcmi;
+DMA_HandleTypeDef hdma_dcmi;
+
+I2C_HandleTypeDef hi2c2;
+
 UART_HandleTypeDef huart2;
+DMA_HandleTypeDef hdma_usart2_tx;
 
 /* USER CODE BEGIN PV */
-static const int input_sample[] = {
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -22359,  29555,  16191,  12079, -34696, -47032,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536,  48574,  65022,
-     65022,  65022,  65022,  58340,  36238,  36238,  36238,  36238,
-     36238,  36238,  36238,  36238,  21845, -38808, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -31097,  -6939, -28527,  -6939,  18247,  51144,
-     65022,  50116,  65022,  65022,  65022,  62966,  52172,  65022,
-     65022,   6425, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -56798, -31611, -58340, -31097, -31097,
-    -31097, -35210, -54742,  55770,  65022, -11051, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -22873,  64508,
-     41892, -56284, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -54228,  54228,  65536, -22873, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536,    771,  65022,  56798,
-    -42920, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -35210,  62452,  65022, -33668, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536,   2827,  65022,  30583, -62966,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -60910,
-     39836,  61938, -35724, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536,   -771,  65022,  28013, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -26985,  63480,
-     57826, -36238, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -55770,  48060,  65022,  19789, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -63994,  38808,  65022,  47032,
-    -47546, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -46004,  65022,  65022, -25957, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -49602,  49602,  65022,  -6425, -65022,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536,   2827,
-     65022,  65022, -38808, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -34182,  58854,  65022,  65022, -38808, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536,  -3341,  65022,
-     65022,  47032, -44976, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536,  -3341,  65022,  40864, -56284, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536,
-    -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536
-};
-
-static int conv1_out[BATCH_SIZE * CONV1_OUT_CHANNELS * CONV1_OUT_HEIGHT * CONV1_OUT_WIDTH];
-static int pool1_out[BATCH_SIZE * CONV1_OUT_CHANNELS * POOL1_OUT_HEIGHT * POOL1_OUT_WIDTH];
-static int conv2_out[BATCH_SIZE * CONV2_OUT_CHANNELS * CONV2_OUT_HEIGHT * CONV2_OUT_WIDTH];
-static int pool2_out[BATCH_SIZE * CONV2_OUT_CHANNELS * POOL2_OUT_HEIGHT * POOL2_OUT_WIDTH];
-static int linear1_out[BATCH_SIZE * LINEAR1_OUT_FEATURES];
-static int linear2_out[BATCH_SIZE * LINEAR2_OUT_FEATURES];
-static int output[BATCH_SIZE * OUTPUT_DIM];
-static unsigned int class_indices[BATCH_SIZE];
 
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_DCMI_Init(void);
+static void MX_I2C2_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-static void report_prediction(unsigned int prediction)
-{
-  char msg[64];
-  int len = snprintf(msg, sizeof(msg), "Predicted class: %lu\r\n", (unsigned long)prediction);
-
-  if (len > 0) {
-    HAL_UART_Transmit(&huart2, (uint8_t *)msg, (uint16_t)len, HAL_MAX_DELAY);
-  }
-}
-
 /* USER CODE END 0 */
 
 /**
@@ -208,17 +98,36 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_USART2_UART_Init();
+  MX_DCMI_Init();
+  MX_I2C2_Init();
   /* USER CODE BEGIN 2 */
-  if ((sizeof(input_sample) / sizeof(input_sample[0])) != INPUT_FLAT_SIZE) {
-    Error_Handler();
-  }
+  
+#ifdef DEBUG
+  serial_print(&huart2, "\r\nBooting app on NUCLEO_F446RE\r\n");
+#endif
 
-  convnet_forward(input_sample, conv1_out, pool1_out,
-                  conv2_out, pool2_out, linear1_out,
-                  linear2_out, output, class_indices);
+  app_config_t app_config = {
+    .i2c_handle = &hi2c2,
+    .dcmi_handle = &hdcmi,
+    .pwdn_gpio_port = PWDN_GPIO_Port,
+    .pwdn_gpio_pin = PWDN_Pin,
+    .reset_gpio_port = RESET_GPIO_Port,
+    .reset_gpio_pin = RESET_Pin,
+    .button_gpio_port = B1_GPIO_Port,
+    .button_gpio_pin = B1_Pin,
+    .uart = &huart2,
+  };
 
+  app_init(&app_config);
+  
+  HAL_Delay(10U);
 
+#ifdef DEBUG
+  serial_print(&huart2, "App init complete\r\n");
+  serial_print(&huart2, "Press B1 to capture one frame\r\n");
+#endif
 
   /* USER CODE END 2 */
 
@@ -226,8 +135,8 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    report_prediction(class_indices[0]);
-    HAL_Delay(500);
+    app_run();
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -280,6 +189,78 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+  HAL_RCC_MCOConfig(RCC_MCO1, RCC_MCO1SOURCE_PLLCLK, RCC_MCODIV_3);
+}
+
+/**
+  * @brief DCMI Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_DCMI_Init(void)
+{
+
+  /* USER CODE BEGIN DCMI_Init 0 */
+
+  /* USER CODE END DCMI_Init 0 */
+
+  /* USER CODE BEGIN DCMI_Init 1 */
+
+  /* USER CODE END DCMI_Init 1 */
+  hdcmi.Instance = DCMI;
+  hdcmi.Init.SynchroMode = DCMI_SYNCHRO_HARDWARE;
+  hdcmi.Init.PCKPolarity = DCMI_PCKPOLARITY_RISING;
+  hdcmi.Init.VSPolarity = DCMI_VSPOLARITY_LOW;
+  hdcmi.Init.HSPolarity = DCMI_HSPOLARITY_LOW;
+  hdcmi.Init.CaptureRate = DCMI_CR_ALL_FRAME;
+  hdcmi.Init.ExtendedDataMode = DCMI_EXTEND_DATA_8B;
+  hdcmi.Init.JPEGMode = DCMI_JPEG_DISABLE;
+  hdcmi.Init.ByteSelectMode = DCMI_BSM_ALL;
+  hdcmi.Init.ByteSelectStart = DCMI_OEBS_ODD;
+  hdcmi.Init.LineSelectMode = DCMI_LSM_ALL;
+  hdcmi.Init.LineSelectStart = DCMI_OELS_ODD;
+  if (HAL_DCMI_Init(&hdcmi) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN DCMI_Init 2 */
+
+  /* USER CODE END DCMI_Init 2 */
+
+}
+
+/**
+  * @brief I2C2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C2_Init(void)
+{
+
+  /* USER CODE BEGIN I2C2_Init 0 */
+
+  /* USER CODE END I2C2_Init 0 */
+
+  /* USER CODE BEGIN I2C2_Init 1 */
+
+  /* USER CODE END I2C2_Init 1 */
+  hi2c2.Instance = I2C2;
+  hi2c2.Init.ClockSpeed = 1000;
+  hi2c2.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c2.Init.OwnAddress1 = 0;
+  hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c2.Init.OwnAddress2 = 0;
+  hi2c2.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c2.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C2_Init 2 */
+
+  /* USER CODE END I2C2_Init 2 */
+
 }
 
 /**
@@ -316,6 +297,26 @@ static void MX_USART2_UART_Init(void)
 }
 
 /**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA2_CLK_ENABLE();
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Stream6_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
+  /* DMA2_Stream1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream1_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -336,6 +337,12 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(PWDN_GPIO_Port, PWDN_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(RESET_GPIO_Port, RESET_Pin, GPIO_PIN_SET);
+
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
@@ -348,6 +355,21 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PWDN_Pin RESET_Pin */
+  GPIO_InitStruct.Pin = PWDN_Pin|RESET_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PA8 */
+  GPIO_InitStruct.Pin = GPIO_PIN_8;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  GPIO_InitStruct.Alternate = GPIO_AF0_MCO;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 

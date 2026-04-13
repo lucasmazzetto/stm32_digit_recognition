@@ -31,6 +31,16 @@
 	</natures>
 	<linkedResources>
 		<link>
+			<name>App/Inc</name>
+			<type>2</type>
+			<locationURI>$%7BPARENT-1-PROJECT_LOC%7D/app/include</locationURI>
+		</link>
+		<link>
+			<name>App/src</name>
+			<type>2</type>
+			<locationURI>$%7BPARENT-1-PROJECT_LOC%7D/app/src</locationURI>
+		</link>
+		<link>
 			<name>Inference/Inc</name>
 			<type>2</type>
 			<locationURI>$%7BPARENT-2-PROJECT_LOC%7D/external/quantized_digit_recognition/include</locationURI>
