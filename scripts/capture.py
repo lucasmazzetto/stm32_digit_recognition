@@ -14,6 +14,25 @@ import serial
 FRAME_BEGIN_RE = re.compile(r"^FRAME_BEGIN\s+(\d+)\s+(\d+)\s+(\d+)$")
 # FRAME_END status=<hal_status>
 FRAME_END_RE = re.compile(r"^FRAME_END\b")
+# NN_PRED <digit>
+NN_PRED_RE = re.compile(r"^NN_PRED\s+(\d+)$")
+
+
+def print_protocol_line(text: str):
+    """
+    @brief Prints known protocol/log lines with clear type separation.
+    """
+    nn_match = NN_PRED_RE.search(text)
+    if nn_match:
+        print(f"NN prediction: {int(nn_match.group(1))}")
+        return
+
+    if text == "READY" or text.startswith("FRAME_"):
+        print(text)
+        return
+
+    # Keep non-protocol firmware logs visible for debugging capture failures
+    print(f"FW: {text}")
 
 
 def write_pgm(path: Path, width: int, height: int, payload: bytes):
@@ -55,8 +74,8 @@ def wait_for_frame_header(ser: serial.Serial, timeout_s: float):
 
         text = line.decode("utf-8", errors="replace").strip()
         # Keep terminal output focused on protocol-level lines only
-        if text and (text == "READY" or text.startswith("FRAME_")):
-            print(text)
+        if text:
+            print_protocol_line(text)
 
         # Parse FRAME_BEGIN and return dimensions + payload size
         match = FRAME_BEGIN_RE.search(text)
@@ -122,8 +141,7 @@ def drain_until_frame_end(ser: serial.Serial, timeout_s: float):
         if not text:
             continue
 
-        if text == "READY" or text.startswith("FRAME_"):
-            print(text)
+        print_protocol_line(text)
         # Stop draining once we see the explicit end marker for this frame cycle
         if FRAME_END_RE.search(text):
             return

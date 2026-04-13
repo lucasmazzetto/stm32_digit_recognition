@@ -395,6 +395,7 @@ uint32_t camera_capture_frame(uint8_t *const frame_buffer,
     const uint32_t transfer_words = transfer_length / 4U;
     const uint32_t transfer_remainder = transfer_length % 4U;
     DMA_HandleTypeDef *dma_handle;
+    uint8_t dma_started = 0U;
     uint32_t start_tick;
 
 #ifdef DEBUG
@@ -436,11 +437,23 @@ uint32_t camera_capture_frame(uint8_t *const frame_buffer,
         return 0U;
     }
 
+    dma_handle = camera_config.dcmi_handle->DMA_Handle;
+    if (dma_handle == NULL) {
+        dma_started = 1U;
+    }
+
     // Wait for frame-complete instead of fixed delay to avoid partial frames
     start_tick = HAL_GetTick();
 
-    while (__HAL_DCMI_GET_FLAG(camera_config.dcmi_handle, DCMI_FLAG_FRAMERI) ==
-           RESET) {
+    while ((__HAL_DCMI_GET_FLAG(camera_config.dcmi_handle, DCMI_FLAG_FRAMERI) ==
+            RESET) ||
+           (dma_started == 0U)) {
+
+        // Require at least one DMA beat to avoid accepting stale FRAMERI
+        if ((dma_handle != NULL) &&
+            (__HAL_DMA_GET_COUNTER(dma_handle) < transfer_words)) {
+            dma_started = 1U;
+        }
 
         // Abort early on hardware overrun or DCMI capture errors
         if ((__HAL_DCMI_GET_FLAG(camera_config.dcmi_handle, DCMI_FLAG_OVRRI) !=
@@ -469,7 +482,6 @@ uint32_t camera_capture_frame(uint8_t *const frame_buffer,
     }
 
     // FRAMERI can assert before DMA fully drains FIFO into memory
-    dma_handle = camera_config.dcmi_handle->DMA_Handle;
     if (dma_handle != NULL) {
         uint8_t dma_drain_timed_out = 0U;
         start_tick = HAL_GetTick();

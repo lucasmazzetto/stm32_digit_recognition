@@ -10,12 +10,7 @@ from typing import Tuple
 
 import numpy as np
 
-
-def ensure_contiguous(array: np.ndarray) -> np.ndarray:
-    """
-    @brief Ensures a NumPy array is C-contiguous.
-    """
-    return np.ascontiguousarray(array) if not array.flags["C_CONTIGUOUS"] else array
+from lut import build_u8_to_q16_lut
 
 
 def load_c_lib(library_path: Path):
@@ -117,31 +112,11 @@ def read_pgm(path: Path) -> np.ndarray:
     return image
 
 
-def normalize_to_fp16(image_u8: np.ndarray) -> np.ndarray:
-    """
-    @brief Normalizes uint8 grayscale image to [-1, 1] and stores it as float16.
-    """
-    # Match training/eval normalization used by Normalize((0.5,), (0.5,))
-    image_f32 = image_u8.astype(np.float32) / 255.0
-    normalized_f32 = (image_f32 - 0.5) / 0.5
-    return normalized_f32.astype(np.float16)
-
-
-def fp16_to_q16_input(image_fp16: np.ndarray, frac_bits: int) -> np.ndarray:
-    """
-    @brief Converts normalized FP16 image to Q-format int32 expected by C inference.
-    """
-    scale = float(1 << frac_bits)
-    # Convert back to float32 for predictable rounding behavior, then quantize.
-    quantized = np.rint(image_fp16.astype(np.float32) * scale).astype(np.int32)
-    return ensure_contiguous(quantized.flatten().astype(np.intc))
-
-
 def run_convnet_inference(c_lib, input_q: np.ndarray) -> int:
     """
     @brief Executes one inference call through run_convnet().
     """
-    prediction = ensure_contiguous(np.zeros(1, dtype=np.uintc))
+    prediction = np.zeros(1, dtype=np.uintc)
     c_int_p = ctypes.POINTER(ctypes.c_int)
     c_uint_p = ctypes.POINTER(ctypes.c_uint)
 
@@ -203,12 +178,9 @@ def main() -> int:
                 f"but model expects {expected_w}x{expected_h}."
             )
 
-        # Requested pipeline:
-        # 1) normalize to model domain
-        # 2) keep normalized image in FP16
-        # 3) convert FP16 image to Q-format integer input for C quantized inference
-        image_fp16 = normalize_to_fp16(image_u8)
-        input_q = fp16_to_q16_input(image_fp16, args.input_frac_bits)
+        # Pipeline implemented via 256-entry LUT
+        lut_q = build_u8_to_q16_lut(args.input_frac_bits)
+        input_q = np.ascontiguousarray(lut_q[image_u8].reshape(-1).astype(np.intc))
 
         if input_q.size != expected_flat:
             raise ValueError(
