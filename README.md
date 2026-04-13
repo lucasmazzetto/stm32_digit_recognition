@@ -10,7 +10,7 @@ The current focus of this project is hardware bring-up and peripheral alignment:
 - `PB1` and `PB12` configured for camera `PWDN` and `RESET`
 - button-triggered OV2640 capture with grayscale frame transfer over `USART2`
 
-The firmware now performs live camera bring-up, captures one YUV422 frame, converts it to grayscale in firmware, and sends the grayscale frame over `USART2` when built with `DEBUG`.
+The firmware now performs live camera bring-up, captures one YUV422 frame, converts it to grayscale, center-crops/resizes to `28x28`, and sends that grayscale output over `USART2` when built with `DEBUG`.
 
 ## Notes
 
@@ -31,11 +31,13 @@ The current firmware default image size is `160x120` in `YUV422` format.
 5. Wait for the on-board `B1` button
 6. Capture one YUV422 frame
 7. Extract grayscale (`Y` lane) in firmware
-8. When built with `DEBUG`, transmit grayscale bytes over `USART2` using DMA
+8. Center-crop `160x120` to `120x120`
+9. Resize `120x120` to `28x28`
+10. When built with `DEBUG`, transmit `28x28` grayscale bytes over `USART2` using DMA
 
 ## Host-side capture
 
-A small host utility is provided at [capture.py](/home/user/Projects/stm32_digit_recognition/scripts/capture.py). It waits for the firmware ready banner, then saves the next grayscale frame as a `.pgm` image. This flow requires firmware built with `DEBUG`, because the ready banner and image UART transmit are both `DEBUG`-gated.
+A small host utility is provided at [capture.py](/home/user/Projects/stm32_digit_recognition/scripts/capture.py). It listens for `FRAME_BEGIN` packets and saves grayscale payloads as `.pgm` images. This flow requires firmware built with `DEBUG`, because frame logs and image UART transfer are `DEBUG`-gated.
 
 Install the host dependency:
 
@@ -51,7 +53,26 @@ python3 scripts/capture.py --port /dev/ttyACM0 --baud 115200 --output capture.pg
 
 If `--output` is omitted, the script default is `capture.pgm`.
 
-When the script prints `Firmware ready. Press B1 to capture one frame.`, press the blue user button on the Nucleo board once.
+To capture multiple button presses in one run, use `--count`:
+
+```bash
+python3 scripts/capture.py --port /dev/ttyACM0 --count 5 --output captures/capture.pgm
+```
+
+This writes:
+- `captures/capture_0001.pgm`
+- `captures/capture_0002.pgm`
+- ...
+
+Use `--count 0` to keep capturing until `Ctrl+C`.
+
+By default, `capture.py` uses `--count 0` (continuous mode).
+In continuous mode, the default output file is overwritten on each capture.
+In continuous mode, header/payload wait is infinite by default.
+Set `--frame-timeout <seconds>` if you want bounded waits with timeout warnings.
+Use `--count 1` when you want a single-frame capture and automatic exit.
+
+When the script is listening, press the blue user button on the Nucleo board for each new frame.
 
 ## Pin configuration
 
@@ -231,10 +252,10 @@ Added `USART2_TX` DMA | `DMA1_Stream6` configured and linked to `huart2` | Align
 Raised USART TX DMA quality | FIFO enabled, full threshold, very high priority | Better matches the reference DMA configuration
 Added camera power-control GPIOs | `PB1 = PWDN`, `PB12 = RESET` | Allows software-controlled sensor bring-up and reset sequencing
 Updated startup output levels | `PWDN = LOW`, `RESET = HIGH` | Prevents holding the camera in reset at boot
-Replaced the static demo path | Firmware now performs live OV2640 init, YUV422 capture, and grayscale transfer | This board project is now focused on camera bring-up rather than inference
-Added host-side serial capture script | `scripts/capture.py` saves the next grayscale frame from `USART2` as `.pgm` | Makes bring-up verification repeatable without manual serial capture
+Replaced the static demo path | Firmware now performs live OV2640 init, YUV422 capture, preprocessing, and grayscale transfer | This board project is now focused on camera bring-up rather than inference
+Added host-side serial capture script | `scripts/capture.py` saves one or more grayscale frames from `USART2` as `.pgm` | Makes bring-up verification repeatable without manual serial capture
 Changed DCMI DMA mode for snapshots | `DMA2_Stream1` uses `DMA_NORMAL` | Prevents snapshot artifacts caused by circular DMA behavior
-Moved grayscale extraction to firmware | `image` module extracts Y lane and sends `width*height` bytes | Keeps host capture simple and deterministic
+Moved image preprocessing to firmware | `image` module extracts Y lane, crops, resizes to `28x28`, and sends `784` bytes | Keeps host capture simple and deterministic
 Lowered `I2C2` speed for bring-up | `I2C2 = 1000 Hz` | Improves SCCB robustness during the long OV2640 configuration sequence
 Enabled internal I2C pull-ups | `PB10` and `PC12` use `GPIO_PULLUP` | Useful for current bench testing; external pull-ups are still preferable in final hardware
 Expanded README | Hardware configuration is now documented in tables | Makes the local project easier to compare against the reference project

@@ -10,8 +10,10 @@ from pathlib import Path
 import serial
 
 
-READY_MARKER = b"Press B1 to capture one frame"
+# FRAME_BEGIN <width> <height> <payload_size>
 FRAME_BEGIN_RE = re.compile(r"^FRAME_BEGIN\s+(\d+)\s+(\d+)\s+(\d+)$")
+# FRAME_END status=<hal_status>
+FRAME_END_RE = re.compile(r"^FRAME_END\b")
 
 
 def write_pgm(path: Path, width: int, height: int, payload: bytes):
@@ -27,37 +29,6 @@ def write_pgm(path: Path, width: int, height: int, payload: bytes):
     path.write_bytes(header + payload)
 
 
-def wait_for_ready(ser: serial.Serial, timeout_s: float):
-    """
-    @brief Waits for the firmware ready marker on the serial stream.
-
-    @param ser Open serial port object.
-    @param timeout_s Timeout in seconds to wait for the ready marker.
-    """
-    deadline = time.monotonic() + timeout_s
-    raw_window = bytearray()
-
-    print("Waiting for firmware initialization...")
-
-    while time.monotonic() < deadline:
-        chunk = ser.read(256)
-        if not chunk:
-            continue
-
-        raw_window.extend(chunk)
-        if len(raw_window) > 4096:
-            del raw_window[:-4096]
-
-        if READY_MARKER in raw_window:
-            print("Firmware ready. Press B1 to capture one frame.")
-            return
-
-    raise TimeoutError(
-        f"Timed out after {timeout_s:.1f}s waiting for init marker: "
-        f"{READY_MARKER.decode('ascii')}"
-    )
-
-
 def wait_for_frame_header(ser: serial.Serial, timeout_s: float):
     """
     @brief Waits for and parses the FRAME_BEGIN header line.
@@ -66,18 +37,28 @@ def wait_for_frame_header(ser: serial.Serial, timeout_s: float):
     @param timeout_s Timeout in seconds to wait for the frame header.
     @return Tuple containing width, height, and payload size in bytes.
     """
-    deadline = time.monotonic() + timeout_s
+    # timeout_s <= 0 means "wait forever" in continuous mode
+    deadline = None
+    if timeout_s > 0.0:
+        deadline = time.monotonic() + timeout_s
     print("Waiting for frame header...")
 
-    while time.monotonic() < deadline:
+    while True:
+        # Exit only when we use bounded timeout and deadline is reached
+        if deadline is not None and time.monotonic() >= deadline:
+            break
+
+        # Read one line because FRAME_BEGIN/READY/FRAME_END are line-oriented logs
         line = ser.readline()
         if not line:
             continue
 
         text = line.decode("utf-8", errors="replace").strip()
-        if text:
+        # Keep terminal output focused on protocol-level lines only
+        if text and (text == "READY" or text.startswith("FRAME_")):
             print(text)
 
+        # Parse FRAME_BEGIN and return dimensions + payload size
         match = FRAME_BEGIN_RE.search(text)
         if match:
             width = int(match.group(1))
@@ -98,10 +79,19 @@ def read_exact(ser: serial.Serial, size: int, timeout_s: float):
     @param timeout_s Timeout in seconds for receiving the payload.
     @return Raw payload bytes with exact requested size.
     """
-    deadline = time.monotonic() + timeout_s
+    # timeout_s <= 0 means "wait forever" for the full payload
+    deadline = None
+    if timeout_s > 0.0:
+        deadline = time.monotonic() + timeout_s
     data = bytearray()
 
-    while len(data) < size and time.monotonic() < deadline:
+    # Keep reading until we collect exactly the announced payload size
+    while len(data) < size:
+        # Exit only when we use bounded timeout and deadline is reached
+        if deadline is not None and time.monotonic() >= deadline:
+            break
+
+        # Read at most remaining bytes (up to 4KB per syscall)
         chunk = ser.read(min(4096, size - len(data)))
         if not chunk:
             continue
@@ -116,14 +106,156 @@ def read_exact(ser: serial.Serial, size: int, timeout_s: float):
     return bytes(data)
 
 
-def main():
+def drain_until_frame_end(ser: serial.Serial, timeout_s: float):
     """
-    @brief Runs the host-side capture workflow and writes one frame to disk.
+    @brief Drains log lines until FRAME_END is seen or timeout elapses.
+    """
+    deadline = time.monotonic() + timeout_s
 
+    while time.monotonic() < deadline:
+        # Drain line logs after payload so next loop starts from a clean boundary
+        line = ser.readline()
+        if not line:
+            continue
+
+        text = line.decode("utf-8", errors="replace").strip()
+        if not text:
+            continue
+
+        if text == "READY" or text.startswith("FRAME_"):
+            print(text)
+        # Stop draining once we see the explicit end marker for this frame cycle
+        if FRAME_END_RE.search(text):
+            return
+
+
+def resolve_output_path(base_path: Path, output_pattern: str | None, index: int,
+                        multi_capture: bool) -> Path:
+    """
+    @brief Builds one output filename for the captured frame.
+    """
+    if output_pattern is not None:
+        # User-supplied printf-style template takes precedence over default naming
+        if "%d" not in output_pattern:
+            raise ValueError("output pattern must contain %d (example: captures/frame_%04d.pgm).")
+        output_path = Path(output_pattern % index).expanduser().resolve()
+    elif multi_capture:
+        # Finite multi-capture mode auto-indexes output files
+        output_path = base_path.with_name(f"{base_path.stem}_{index:04d}{base_path.suffix}")
+    else:
+        # Single/continuous default mode writes to one fixed output path
+        output_path = base_path
+
+    # Force .pgm extension to match the image writer format
+    if output_path.suffix.lower() != ".pgm":
+        output_path = output_path.with_suffix(".pgm")
+
+    # Ensure destination folder exists before writing
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    return output_path
+
+
+def main(args: argparse.Namespace):
+    """
+    @brief Runs host-side capture and writes one or more frames to disk.
+
+    @param args Parsed CLI arguments.
     @return Process exit code (0 on success, non-zero on failure).
     """
+    if args.count < 0:
+        print("Error: --count must be >= 0.", file=sys.stderr)
+        return 2
+    if args.frame_timeout is not None and args.frame_timeout < 0:
+        print("Error: --frame-timeout must be >= 0.", file=sys.stderr)
+        return 2
+
+    # Naming per frame is derived from this base path
+    base_output_path = Path(args.output).expanduser().resolve()
+    if base_output_path.suffix == "":
+        base_output_path = base_output_path.with_suffix(".pgm")
+
+    # Enable indexed filenames only for finite multi-capture sessions
+    multi_capture = args.count > 1
+    target_count = args.count
+
+    # Timeout policy
+    frame_timeout = args.frame_timeout
+    if frame_timeout is None:
+        if target_count == 0:
+            frame_timeout = 0.0
+        else:
+            frame_timeout = 60.0
+
+    try:
+        with serial.Serial(args.port, args.baud, timeout=0.25) as ser:
+            # Drop stale buffered bytes from previous runs/reset noise
+            ser.reset_input_buffer()
+            print("Listening for frames. Press B1 on the board to capture.")
+            if target_count == 0:
+                print("Capture mode: continuous (Ctrl+C to stop).")
+                if frame_timeout <= 0.0:
+                    print("Header/payload timeout: infinite.")
+                if args.output_pattern is None:
+                    print(f"Output mode: overwrite {base_output_path} on each capture.")
+            else:
+                print(f"Capture mode: {target_count} frame(s).")
+
+            captured = 0
+            # Main capture loop: bounded by --count unless count=0 (continuous)
+            while (target_count == 0) or (captured < target_count):
+                frame_index = captured + 1
+
+                try:
+                    # 1) Wait for protocol header 2) Read exact payload bytes
+                    width, height, size = wait_for_frame_header(ser, frame_timeout)
+                    payload = read_exact(ser, size, frame_timeout)
+                except TimeoutError as exc:
+                    # Continuous mode keeps running after missing/late frames
+                    if target_count == 0:
+                        print(f"Warning: {exc} Continuing to wait for next frame.")
+                        continue
+                    # Finite mode treats timeout as terminal error
+                    raise
+
+                print(f"Resolution: {width}x{height}, bytes: {len(payload)}")
+                expected_size = width * height
+                # Reject malformed payloads (size announced vs size expected by WxH)
+                if len(payload) != expected_size:
+                    message = (
+                        f"expected grayscale payload with {expected_size} bytes, "
+                        f"got {len(payload)} bytes."
+                    )
+                    if target_count == 0:
+                        print(f"Warning: {message} Discarding frame.")
+                        drain_until_frame_end(ser, args.frame_end_timeout)
+                        continue
+                    print(f"Error: {message}", file=sys.stderr)
+                    return 2
+
+                # Resolve destination filename and persist one PGM frame
+                output_path = resolve_output_path(base_output_path,
+                                                  args.output_pattern,
+                                                  frame_index,
+                                                  multi_capture)
+                write_pgm(output_path, width, height, payload)
+                print(f"Saved frame #{frame_index} to {output_path}")
+
+                # Consume trailing frame logs before waiting for the next header
+                drain_until_frame_end(ser, args.frame_end_timeout)
+                captured += 1
+    except KeyboardInterrupt:
+        print("\nInterrupted.", file=sys.stderr)
+        return 130
+    except (OSError, serial.SerialException, TimeoutError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description='Wait for OV2640 init logs and save the next frame.',
+        description='Wait for FRAME_BEGIN packets and save one or more grayscale frames.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--port', type=str, default='/dev/ttyACM0',
@@ -135,46 +267,17 @@ def main():
     parser.add_argument('--output', type=str, default='capture.pgm',
                         help='Output grayscale PGM file path.')
 
-    parser.add_argument('--init-timeout', type=float, default=60.0,
-                        help='Seconds to wait for the firmware ready message.')
+    parser.add_argument('--frame-timeout', type=float, default=None,
+                        help='Seconds to wait for frame header/payload. Use 0 for infinite wait. '
+                             'If omitted: continuous mode uses infinite wait; finite mode uses 60s.')
 
-    parser.add_argument('--frame-timeout', type=float, default=60.0,
-                        help='Seconds to wait for frame header and payload after init is ready.')
-    args = parser.parse_args()
-    output_path = Path(args.output).expanduser().resolve()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    parser.add_argument('--frame-end-timeout', type=float, default=2.0,
+                        help='Seconds to wait for optional FRAME_END log after payload.')
 
-    try:
-        with serial.Serial(args.port, args.baud, timeout=0.25) as ser:
-            ser.reset_input_buffer()
-            wait_for_ready(ser, args.init_timeout)
-            width, height, size = wait_for_frame_header(ser, args.frame_timeout)
-            payload = read_exact(ser, size, args.frame_timeout)
-    except KeyboardInterrupt:
-        print("\nInterrupted.", file=sys.stderr)
-        return 130
-    except (OSError, serial.SerialException, TimeoutError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        return 1
+    parser.add_argument('--count', type=int, default=0,
+                        help='Number of frames to capture (0 means capture until interrupted).')
 
-    print(f"Resolution: {width}x{height}, bytes: {len(payload)}")
-    expected_size = width * height
-    if len(payload) != expected_size:
-        print(
-            f"Error: expected grayscale payload with {expected_size} bytes, "
-            f"got {len(payload)} bytes.",
-            file=sys.stderr,
-        )
-        return 2
+    parser.add_argument('--output-pattern', type=str, default=None,
+                        help='Optional printf-style path pattern with %%d (e.g. captures/frame_%%04d.pgm).')
 
-    if output_path.suffix.lower() != ".pgm":
-        output_path = output_path.with_suffix(".pgm")
-
-    write_pgm(output_path, width, height, payload)
-    print(f"Saved grayscale image to {output_path}")
-
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(parser.parse_args()))

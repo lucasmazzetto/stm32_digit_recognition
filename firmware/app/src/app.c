@@ -53,14 +53,12 @@ void app_run(void)
                 camera_capture_frame(frame_buffer, CAMERA_FRAME_BUFFER_SIZE);
 
             if (length > 0U) {
-                // YUV422 (2 bytes/pixel) -> grayscale (1 byte/pixel) in-place
                 // Output remains in frame_buffer, compacted at the beginning
                 grayscale_length =
                     image_yuv422_to_grayscale(frame_buffer, length, 0U);
 
                 if (grayscale_length > 0U) {
                     // Crop 160x120 grayscale to a square 120x120 image
-                    // This is still done in-place in frame_buffer
                     cropped_length = image_grayscale_crop_center(
                         frame_buffer, CAMERA_FRAME_WIDTH, CAMERA_FRAME_HEIGHT,
                         CROP_FRAME_WIDTH, CROP_FRAME_HEIGHT);
@@ -111,6 +109,12 @@ void app_run(void)
             button_armed = 0U;
         }
     } else {
-        button_armed = 1U;
+        // Re-arm only on release transition and announce ready state once
+        if (button_armed == 0U) {
+            button_armed = 1U;
+#ifdef DEBUG
+            serial_print(app_config.uart, "READY\r\n");
+#endif
+        }
     }
 }
