@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 
 
-def build_u8_to_q16_lut(frac_bits: int = 16):
+def generate_u8_to_q16_lut(frac_bits: int = 16):
     """
     @brief Builds a 256-entry LUT that matches host normalization -> FP16 -> Q-format.
 
@@ -75,7 +75,7 @@ def generate_c_lut_files(output_dir: Path, frac_bits: int = 16):
     @param frac_bits Q-format fractional bits used to generate LUT.
     @return Tuple of generated header path and source path.
     """
-    lut_values = build_u8_to_q16_lut(frac_bits=frac_bits)
+    lut_values = generate_u8_to_q16_lut(frac_bits=frac_bits)
 
     include_dir = output_dir / 'include'
     source_dir = output_dir / 'src'
