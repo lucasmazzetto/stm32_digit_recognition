@@ -84,14 +84,14 @@ def run_convnet_inference(c_lib, input_q: np.ndarray):
     @param input_q Flattened quantized input array in model format.
     @return Predicted class index.
     """
-    prediction = np.zeros(1, dtype=np.uintc)
+    predictions = np.zeros(1, dtype=np.uintc)
     c_int_p = ctypes.POINTER(ctypes.c_int)
     c_uint_p = ctypes.POINTER(ctypes.c_uint)
 
     c_lib.run_convnet(input_q.ctypes.data_as(c_int_p),
-                      prediction.ctypes.data_as(c_uint_p))
+                      predictions.ctypes.data_as(c_uint_p))
     
-    return int(prediction[0])
+    return int(predictions[0])
 
 
 def main(args: argparse.Namespace):

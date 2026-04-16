@@ -14,7 +14,7 @@
  * @brief Runtime configuration passed to the application module
  *
  * @details This struct groups the HAL peripheral handles and GPIO mapping
- *          required by `app_init` to configure camera capture and user input
+ *          required by `app_init` to configure camera capture
  */
 typedef struct
 {
@@ -24,8 +24,6 @@ typedef struct
     uint16_t pwdn_gpio_pin; // Camera PWDN GPIO pin
     GPIO_TypeDef *reset_gpio_port; // Camera RESET GPIO port
     uint16_t reset_gpio_pin; // Camera RESET GPIO pin
-    GPIO_TypeDef *button_gpio_port; // User button GPIO port
-    uint16_t button_gpio_pin; // User button GPIO pin
     UART_HandleTypeDef *uart; // UART handle used for debug/image streaming
 } app_config_t;
 
@@ -39,9 +37,18 @@ void app_init(const app_config_t *config);
 /**
  * @brief Executes one application cycle
  *
- * @details Polls the user button, captures one frame on press, processes the
- *          image pipeline, and streams the result over UART when successful
+ * @details Captures one frame, runs preprocessing/inference pipeline, and
+ *          streams debug outputs over UART when enabled
  */
 void app_run(void);
+
+#ifdef DEBUG
+/**
+ * @brief Requests cached frame transfer from ISR context
+ *
+ * @details This function is intended to be called from EXTI callback
+ */
+void app_request_frame_send_from_isr(void);
+#endif
 
 #endif /* APP_H */

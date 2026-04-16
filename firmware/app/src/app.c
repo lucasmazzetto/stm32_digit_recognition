@@ -9,26 +9,40 @@
 #define OUTPUT_FRAME_SIZE (OUTPUT_FRAME_WIDTH * OUTPUT_FRAME_HEIGHT)
 #define NN_INPUT_SIZE ((uint32_t)INPUT_FLAT_SIZE)
 
-_Static_assert(OUTPUT_FRAME_SIZE == NN_INPUT_SIZE,
-               "Output frame size must match model input size");
+#ifdef DEBUG
+static volatile uint8_t send_frame_request = 0U;
+#endif
 
 static app_config_t app_config;
+
+// Keep buffers 4-byte aligned for safer DMA/peripheral access and efficient word reads/writes
 static uint8_t frame_buffer[CAMERA_FRAME_BUFFER_SIZE]
     __attribute__((aligned(4)));
+
 static uint8_t resized_frame_buffer[OUTPUT_FRAME_SIZE]
     __attribute__((aligned(4)));
-static int nn_input[INPUT_FLAT_SIZE] __attribute__((aligned(4)));
-static uint8_t button_armed = 0U;
 
+static int nn_input[INPUT_FLAT_SIZE];
 
-static int conv1_out[BATCH_SIZE * CONV1_OUT_CHANNELS * CONV1_OUT_HEIGHT * CONV1_OUT_WIDTH];
-static int pool1_out[BATCH_SIZE * CONV1_OUT_CHANNELS * POOL1_OUT_HEIGHT * POOL1_OUT_WIDTH];
-static int conv2_out[BATCH_SIZE * CONV2_OUT_CHANNELS * CONV2_OUT_HEIGHT * CONV2_OUT_WIDTH];
-static int pool2_out[BATCH_SIZE * CONV2_OUT_CHANNELS * POOL2_OUT_HEIGHT * POOL2_OUT_WIDTH];
-static int linear1_out[BATCH_SIZE * LINEAR1_OUT_FEATURES];
-static int linear2_out[BATCH_SIZE * LINEAR2_OUT_FEATURES];
-static int output[BATCH_SIZE * OUTPUT_DIM];
-static unsigned int class_indices[BATCH_SIZE];
+static int conv_1_output[BATCH_SIZE * CONV_1_OUT_CHANNELS * CONV_1_OUT_HEIGHT *
+                         CONV_1_OUT_WIDTH];
+
+static int pool_1_output[BATCH_SIZE * CONV_1_OUT_CHANNELS * POOL_1_OUT_HEIGHT *
+                         POOL_1_OUT_WIDTH];
+
+static int conv_2_output[BATCH_SIZE * CONV_2_OUT_CHANNELS * CONV_2_OUT_HEIGHT *
+                         CONV_2_OUT_WIDTH];
+
+static int pool_2_output[BATCH_SIZE * CONV_2_OUT_CHANNELS * POOL_2_OUT_HEIGHT *
+                         POOL_2_OUT_WIDTH];
+
+static int linear_1_output[BATCH_SIZE * LINEAR_1_OUT_FEATURES];
+
+static int linear_2_output[BATCH_SIZE * LINEAR_2_OUT_FEATURES];
+
+static int logits[BATCH_SIZE * OUTPUT_DIM];
+
+static unsigned int predictions[BATCH_SIZE];
 
 /**
  * @brief Converts uint8 grayscale pixels to Q16 fixed-point input values
@@ -61,6 +75,13 @@ void app_init(const app_config_t *config)
     camera_init(&camera_config);
 }
 
+#ifdef DEBUG
+void app_request_frame_send_from_isr(void)
+{
+    send_frame_request = 1U;
+}
+#endif
+
 void app_run(void)
 {
     uint32_t length;
@@ -87,8 +108,7 @@ void app_run(void)
             // Resize 120x120 to 28x28 using bilinear interpolation
             resized_length = image_grayscale_resize(
                 frame_buffer, CROP_FRAME_WIDTH, CROP_FRAME_HEIGHT,
-                resized_frame_buffer, OUTPUT_FRAME_WIDTH,
-                OUTPUT_FRAME_HEIGHT);
+                resized_frame_buffer, OUTPUT_FRAME_WIDTH, OUTPUT_FRAME_HEIGHT);
         }
     }
 
@@ -109,15 +129,16 @@ void app_run(void)
         unsigned int predicted_digit = 0U;
 
         if (resized_length == OUTPUT_FRAME_SIZE) {
-            preprocess_u8_to_q16(resized_frame_buffer, NN_INPUT_SIZE, nn_input);
+            preprocess_u8_to_q16(resized_frame_buffer, NN_INPUT_SIZE,
+                                 nn_input);
         }
 
         // Run NN only when resized payload matches expected model input size
         if (resized_length == NN_INPUT_SIZE) {
-            convnet_forward(nn_input, conv1_out, pool1_out,
-                            conv2_out, pool2_out, linear1_out,
-                            linear2_out, output, class_indices);
-            predicted_digit = class_indices[0];
+            convnet_forward(nn_input, conv_1_output, pool_1_output,
+                            conv_2_output, pool_2_output, linear_1_output,
+                            linear_2_output, logits, predictions);
+            predicted_digit = predictions[0];
             nn_prediction_valid = 1U;
         }
 
@@ -133,33 +154,22 @@ void app_run(void)
 #endif
     }
 
-    if (HAL_GPIO_ReadPin(app_config.button_gpio_port,
-                         app_config.button_gpio_pin) == GPIO_PIN_SET) {
-        // Trigger once per physical press and re-arm only after release
-        if (button_armed == 1U) {
 #ifdef DEBUG
-            HAL_StatusTypeDef status;
+    if (send_frame_request == 1U) {
+        HAL_StatusTypeDef status;
 
-            serial_print(app_config.uart, "FRAME_BEGIN %u %u %u\r\n",
-                         (unsigned int)OUTPUT_FRAME_WIDTH,
-                         (unsigned int)OUTPUT_FRAME_HEIGHT,
-                         (unsigned int)OUTPUT_FRAME_SIZE);
-            // Send cached 28x28 grayscale payload
-            status = serial_send_image(
-                app_config.uart, resized_frame_buffer, OUTPUT_FRAME_SIZE);
+        send_frame_request = 0U;
 
-            serial_print(app_config.uart, "\r\nFRAME_END status=%d\r\n",
-                         (int)status);
-#endif
-            button_armed = 0U;
-        }
-    } else {
-        // Re-arm only on release transition and announce ready state once
-        if (button_armed == 0U) {
-            button_armed = 1U;
-#ifdef DEBUG
-            serial_print(app_config.uart, "READY\r\n");
-#endif
-        }
+        serial_print(app_config.uart, "FRAME_BEGIN %u %u %u\r\n",
+                     (unsigned int)OUTPUT_FRAME_WIDTH,
+                     (unsigned int)OUTPUT_FRAME_HEIGHT,
+                     (unsigned int)OUTPUT_FRAME_SIZE);
+        // Send cached 28x28 grayscale payload
+        status = serial_send_image(app_config.uart, resized_frame_buffer,
+                                   OUTPUT_FRAME_SIZE);
+
+        serial_print(app_config.uart, "\r\nFRAME_END status=%d\r\n",
+                     (int)status);
     }
+#endif
 }

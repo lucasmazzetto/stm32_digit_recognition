@@ -8,9 +8,9 @@ The current focus of this project is hardware bring-up and peripheral alignment:
 - `PA8 / RCC_MCO1` configured as camera `XCLK`
 - `USART2` configured for logs and frame transfer, with TX DMA enabled
 - `PB1` and `PB12` configured for camera `PWDN` and `RESET`
-- button-triggered OV2640 capture with grayscale frame transfer over `USART2`
+- continuous OV2640 capture/inference loop with debug frame transfer over `USART2`
 
-The firmware now performs live camera bring-up, captures one YUV422 frame, converts it to grayscale, center-crops/resizes to `28x28`, and sends that grayscale output over `USART2` when built with `DEBUG`.
+The firmware now performs live camera bring-up and runs a continuous capture/preprocess/inference loop; when built with `DEBUG`, it also emits NN logs and can stream the cached `28x28` frame over `USART2` on button request.
 
 ## Notes
 
@@ -28,12 +28,10 @@ The current firmware default image size is `160x120` in `YUV422` format.
 2. Apply the OV2640 reset and power-up sequence
 3. Probe the camera over SCCB and print `PID` / `VER` in `DEBUG`
 4. Configure the sensor for `160x120` YUV422 capture
-5. Wait for the on-board `B1` button
-6. Capture one YUV422 frame
-7. Extract grayscale (`Y` lane) in firmware
-8. Center-crop `160x120` to `120x120`
-9. Resize `120x120` to `28x28`
-10. When built with `DEBUG`, transmit `28x28` grayscale bytes over `USART2` using DMA
+5. Run a continuous loop: capture YUV422, convert to grayscale, center-crop to `120x120`, resize to `28x28`
+6. Convert `28x28` pixels to Q-format input using LUT and run quantized inference
+7. In `DEBUG`, print `NN_PRED <digit>` for each valid inference
+8. In `DEBUG`, pressing `B1` sends the latest `28x28` cached frame over UART using `FRAME_BEGIN`/`FRAME_END`
 
 ## Host-side capture
 
@@ -53,26 +51,16 @@ python3 scripts/capture.py --port /dev/ttyACM0 --baud 115200 --output capture.pg
 
 If `--output` is omitted, the script default is `capture.pgm`.
 
-To capture multiple button presses in one run, use `--count`:
+The script runs in continuous mode and overwrites the same output file on each received frame.
+Header and payload wait are infinite by default.
+
+Optional timeout controls:
 
 ```bash
-python3 scripts/capture.py --port /dev/ttyACM0 --count 5 --output captures/capture.pgm
+python3 scripts/capture.py --frame-timeout 5 --frame-end-timeout 2
 ```
 
-This writes:
-- `captures/capture_0001.pgm`
-- `captures/capture_0002.pgm`
-- ...
-
-Use `--count 0` to keep capturing until `Ctrl+C`.
-
-By default, `capture.py` uses `--count 0` (continuous mode).
-In continuous mode, the default output file is overwritten on each capture.
-In continuous mode, header/payload wait is infinite by default.
-Set `--frame-timeout <seconds>` if you want bounded waits with timeout warnings.
-Use `--count 1` when you want a single-frame capture and automatic exit.
-
-When the script is listening, press the blue user button on the Nucleo board for each new frame.
+When the script is listening, press the blue user button on the Nucleo board to request frame transfer.
 
 ## Pin configuration
 
@@ -223,6 +211,7 @@ DMA1 stream6 global interrupt | true | 0 | 0
 DMA2 stream1 global interrupt | true | 0 | 0
 DCMI global interrupt | true | 0 | 0
 USART2 global interrupt | true | 0 | 0
+EXTI line[15:10] interrupts | true | 5 | 0
 
 ### NVIC note
 
@@ -256,6 +245,7 @@ Replaced the static demo path | Firmware now performs live OV2640 init, YUV422 c
 Added host-side serial capture script | `scripts/capture.py` saves one or more grayscale frames from `USART2` as `.pgm` | Makes bring-up verification repeatable without manual serial capture
 Changed DCMI DMA mode for snapshots | `DMA2_Stream1` uses `DMA_NORMAL` | Prevents snapshot artifacts caused by circular DMA behavior
 Moved image preprocessing to firmware | `image` module extracts Y lane, crops, resizes to `28x28`, and sends `784` bytes | Keeps host capture simple and deterministic
+Changed runtime flow to continuous inference | Firmware now captures and runs NN continuously; `DEBUG` button press sends the latest cached `28x28` frame | Keeps NN output always updating while preserving on-demand image dumps
 Lowered `I2C2` speed for bring-up | `I2C2 = 1000 Hz` | Improves SCCB robustness during the long OV2640 configuration sequence
 Enabled internal I2C pull-ups | `PB10` and `PC12` use `GPIO_PULLUP` | Useful for current bench testing; external pull-ups are still preferable in final hardware
 Expanded README | Hardware configuration is now documented in tables | Makes the local project easier to compare against the reference project
