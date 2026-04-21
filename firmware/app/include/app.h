@@ -1,14 +1,26 @@
 #ifndef APP_H
 #define APP_H
 
-#include "camera.h"
-#include "convnet.h"
-#include "serial.h"
-#include "stm32f4xx_hal.h"
-
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+
+#include "stm32f4xx_hal.h"
+
+#include "camera.h"
+#include "convnet.h"
+#include "image.h"
+#include "lut.h"
+#include "serial.h"
+
+#define CROP_FRAME_HEIGHT 120U
+#define CROP_FRAME_WIDTH 120U
+#define INPUT_FILTER_DARK_PIXEL_THRESHOLD 50U
+#define INPUT_FILTER_EDGE_TAU 7U
+#define NN_INPUT_SIZE ((uint32_t)INPUT_FLAT_SIZE)
+#define OUTPUT_FRAME_HEIGHT 28U
+#define OUTPUT_FRAME_WIDTH 28U
+#define OUTPUT_FRAME_SIZE (OUTPUT_FRAME_WIDTH * OUTPUT_FRAME_HEIGHT)
 
 /**
  * @brief Runtime configuration passed to the application module

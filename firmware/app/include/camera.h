@@ -5,30 +5,19 @@
 
 #include "stm32f4xx_hal.h"
 
-/**
- * @brief Fixed frame width in pixels.
- */
-#define CAMERA_FRAME_WIDTH 160U
+#include "serial.h"
 
-/**
- * @brief Fixed frame height in pixels.
- */
-#define CAMERA_FRAME_HEIGHT 120U
-
-/**
- * @brief Raw camera format bytes per pixel (YUV422).
- */
+#define CAMERA_CAPTURE_TIMEOUT_MS 2000U
+#define CAMERA_DMA_DRAIN_TIMEOUT_MS 100U
 #define CAMERA_FRAME_BYTES_PER_PIXEL 2U
-
-/**
- * @brief Raw camera frame buffer size in bytes.
- */
+#define CAMERA_FRAME_HEIGHT 120U
+#define CAMERA_FRAME_WIDTH 160U
 #define CAMERA_FRAME_BUFFER_SIZE \
     (CAMERA_FRAME_WIDTH * CAMERA_FRAME_HEIGHT * CAMERA_FRAME_BYTES_PER_PIXEL)
+#define SCCB_MAX_RETRIES 3U
+#define SCCB_RECOVERY_DELAY_MS 2U
+#define SCCB_WRITE_SETTLE_DELAY_MS 2U
 
-/**
- * @brief Runtime configuration for the camera driver.
- */
 typedef struct
 {
     I2C_HandleTypeDef *i2c_handle;
@@ -59,7 +48,6 @@ void camera_init(const camera_config_t *config);
  * @param transfer_length Requested capture size in bytes.
  * @return Captured frame size in bytes, or 0 on error.
  */
-uint32_t camera_capture_frame(uint8_t *frame_buffer,
-                              uint32_t transfer_length);
+uint32_t camera_capture_frame(uint8_t *frame_buffer, uint32_t transfer_length);
 
 #endif /* CAMERA_H_ */

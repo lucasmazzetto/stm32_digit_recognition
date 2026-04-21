@@ -1,11 +1,4 @@
 #include "camera.h"
-#include "serial.h"
-
-#define SCCB_MAX_RETRIES 3U
-#define SCCB_WRITE_SETTLE_DELAY_MS 2U
-#define SCCB_RECOVERY_DELAY_MS 2U
-#define CAMERA_CAPTURE_TIMEOUT_MS 2000U
-#define CAMERA_DMA_DRAIN_TIMEOUT_MS 100U
 
 static camera_config_t camera_config;
 

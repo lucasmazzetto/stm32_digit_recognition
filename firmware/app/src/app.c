@@ -1,13 +1,4 @@
 #include "app.h"
-#include "image.h"
-#include "lut.h"
-
-#define CROP_FRAME_WIDTH 120U
-#define CROP_FRAME_HEIGHT 120U
-#define OUTPUT_FRAME_WIDTH 28U
-#define OUTPUT_FRAME_HEIGHT 28U
-#define OUTPUT_FRAME_SIZE (OUTPUT_FRAME_WIDTH * OUTPUT_FRAME_HEIGHT)
-#define NN_INPUT_SIZE ((uint32_t)INPUT_FLAT_SIZE)
 
 #ifdef DEBUG
 static volatile uint8_t send_frame_request = 0U;
@@ -43,6 +34,44 @@ static int linear_2_output[BATCH_SIZE * LINEAR_2_OUT_FEATURES];
 static int logits[BATCH_SIZE * OUTPUT_DIM];
 
 static unsigned int predictions[BATCH_SIZE];
+
+/**
+ * @brief Fast integer-only input gate based on dark border pixels.
+ *
+ * @param image_u8 Input grayscale image.
+ * @return 1 if input is known-like, 0 if unknown-like.
+ */
+static uint8_t app_input_is_known(const uint8_t *image_u8)
+{
+    const uint32_t width = OUTPUT_FRAME_WIDTH;
+    const uint32_t height = OUTPUT_FRAME_HEIGHT;
+    const uint32_t last_row_offset = (height - 1U) * width;
+
+    // Count dark pixels only on the 1-pixel image border.
+    uint32_t edge_dark_count = 0U;
+
+    // Top row + bottom row.
+    for (uint32_t x = 0U; x < width; ++x) {
+        edge_dark_count +=
+            (uint32_t)(image_u8[x] < INPUT_FILTER_DARK_PIXEL_THRESHOLD);
+
+
+        edge_dark_count += (uint32_t)(image_u8[last_row_offset + x] <
+                                      INPUT_FILTER_DARK_PIXEL_THRESHOLD);
+    }
+
+    // Left/right columns excluding corners (already counted by top/bottom rows).
+    for (uint32_t y = 1U; y < (height - 1U); ++y) {
+        edge_dark_count += (uint32_t)(image_u8[y * width] <
+                                      INPUT_FILTER_DARK_PIXEL_THRESHOLD);
+                                      
+        edge_dark_count += (uint32_t)(image_u8[y * width + (width - 1U)] <
+                                      INPUT_FILTER_DARK_PIXEL_THRESHOLD);
+    }
+
+    // White background + centered black digit => low dark pixels on border.
+    return (uint8_t)(edge_dark_count <= INPUT_FILTER_EDGE_TAU);
+}
 
 /**
  * @brief Converts uint8 grayscale pixels to Q16 fixed-point input values
@@ -125,29 +154,26 @@ void app_run(void)
 #endif
 
     if (resized_length > 0U) {
-        uint8_t nn_prediction_valid = 0U;
-        unsigned int predicted_digit = 0U;
-
-        if (resized_length == OUTPUT_FRAME_SIZE) {
-            preprocess_u8_to_q16(resized_frame_buffer, NN_INPUT_SIZE,
-                                 nn_input);
-        }
-
-        // Run NN only when resized payload matches expected model input size
+        // Validate input before NN and run only for known-like inputs
         if (resized_length == NN_INPUT_SIZE) {
-            convnet_forward(nn_input, conv_1_output, pool_1_output,
-                            conv_2_output, pool_2_output, linear_1_output,
-                            linear_2_output, logits, predictions);
-            predicted_digit = predictions[0];
-            nn_prediction_valid = 1U;
-        }
+            if (app_input_is_known(resized_frame_buffer) == 1U) {
+                preprocess_u8_to_q16(resized_frame_buffer, NN_INPUT_SIZE,
+                                     nn_input);
+
+                convnet_forward(nn_input, conv_1_output, pool_1_output,
+                                conv_2_output, pool_2_output, linear_1_output,
+                                linear_2_output, logits, predictions);
 
 #ifdef DEBUG
-        if (nn_prediction_valid == 1U) {
-            serial_print(app_config.uart, "NN_PRED %u\r\n",
-                         (unsigned int)predicted_digit);
-        }
+                serial_print(app_config.uart, "NN_PRED %u\r\n",
+                             (unsigned int)predictions[0]);
 #endif
+            } else {
+#ifdef DEBUG
+                serial_print(app_config.uart, "NN_PRED unknown\r\n");
+#endif
+            }
+        }
     } else {
 #ifdef DEBUG
         serial_print(app_config.uart, "Failed to capture frame\r\n");

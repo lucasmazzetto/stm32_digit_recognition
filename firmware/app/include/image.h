@@ -8,14 +8,14 @@
 // Number of fractional bits in fixed-point coordinates: 10 bits balances precision and MCU cost
 #define IMAGE_BILINEAR_FRAC_BITS 10U
 
-// Fixed-point unit scale (2^frac_bits): used to represent interpolation weights without float math
-#define IMAGE_BILINEAR_SCALE (1U << IMAGE_BILINEAR_FRAC_BITS)
-
 // Mask to extract only the fractional part from a fixed-point coordinate
-#define IMAGE_BILINEAR_FRACTION_MASK (IMAGE_BILINEAR_SCALE - 1U)
+#define IMAGE_BILINEAR_FRACTION_MASK ((1U << IMAGE_BILINEAR_FRAC_BITS) - 1U)
 
 // Half-LSB at bilinear accumulator scale: added before right shift for rounded output
 #define IMAGE_BILINEAR_ROUNDING (1U << ((2U * IMAGE_BILINEAR_FRAC_BITS) - 1U))
+
+// Fixed-point unit scale (2^frac_bits): used to represent interpolation weights without float math
+#define IMAGE_BILINEAR_SCALE (1U << IMAGE_BILINEAR_FRAC_BITS)
 
 /**
  * @brief Converts packed YUV422 to grayscale in-place using a selected phase.
