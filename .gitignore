@@ -90,3 +90,6 @@ Thumbs.db
 # Python cache files
 __pycache__/
 *.py[cod]
+
+# Local capture output
+capture.pgm

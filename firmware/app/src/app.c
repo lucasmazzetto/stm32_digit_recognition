@@ -1,18 +1,94 @@
 #include "app.h"
-#include "image.h"
 
-#define CROP_FRAME_WIDTH 120U
-#define CROP_FRAME_HEIGHT 120U
-#define OUTPUT_FRAME_WIDTH 28U
-#define OUTPUT_FRAME_HEIGHT 28U
-#define OUTPUT_FRAME_SIZE (OUTPUT_FRAME_WIDTH * OUTPUT_FRAME_HEIGHT)
+#ifdef DEBUG
+static volatile uint8_t send_frame_request = 0U;
+#endif
 
 static app_config_t app_config;
+
+// Keep buffers 4-byte aligned for safer DMA/peripheral access and efficient word reads/writes
 static uint8_t frame_buffer[CAMERA_FRAME_BUFFER_SIZE]
     __attribute__((aligned(4)));
+
 static uint8_t resized_frame_buffer[OUTPUT_FRAME_SIZE]
     __attribute__((aligned(4)));
-static uint8_t button_armed = 0U;
+
+static int nn_input[INPUT_FLAT_SIZE];
+
+static int conv_1_output[BATCH_SIZE * CONV_1_OUT_CHANNELS * CONV_1_OUT_HEIGHT *
+                         CONV_1_OUT_WIDTH];
+
+static int pool_1_output[BATCH_SIZE * CONV_1_OUT_CHANNELS * POOL_1_OUT_HEIGHT *
+                         POOL_1_OUT_WIDTH];
+
+static int conv_2_output[BATCH_SIZE * CONV_2_OUT_CHANNELS * CONV_2_OUT_HEIGHT *
+                         CONV_2_OUT_WIDTH];
+
+static int pool_2_output[BATCH_SIZE * CONV_2_OUT_CHANNELS * POOL_2_OUT_HEIGHT *
+                         POOL_2_OUT_WIDTH];
+
+static int linear_1_output[BATCH_SIZE * LINEAR_1_OUT_FEATURES];
+
+static int linear_2_output[BATCH_SIZE * LINEAR_2_OUT_FEATURES];
+
+static int logits[BATCH_SIZE * OUTPUT_DIM];
+
+static unsigned int predictions[BATCH_SIZE];
+
+/**
+ * @brief Fast integer-only known/unknown filter using intensity-bin counts.
+ *
+ * @param image Input grayscale image.
+ * @return 1 if input is known-like, 0 if unknown-like.
+ */
+static uint8_t app_input_is_known(const uint8_t *image)
+{
+    uint32_t dark_count = 0U;
+    uint32_t medium_count = 0U;
+    uint32_t light_count = 0U;
+
+    for (uint32_t index = 0U; index < OUTPUT_FRAME_SIZE; ++index) {
+        const uint8_t pixel = image[index];
+
+        if (pixel < INPUT_FILTER_DARK_MAX_THRESHOLD) {
+            dark_count += 1U;
+        } else if (pixel < INPUT_FILTER_MEDIUM_MAX_THRESHOLD) {
+            medium_count += 1U;
+        } else {
+            light_count += 1U;
+        }
+    }
+
+    // Accept as known only when all three intensity-bin counts stay within
+    // the calibrated known-sample ranges.
+#ifdef DEBUG
+    serial_print(app_config.uart,
+                 "FILTER_COUNTS dark=%u medium=%u light=%u\r\n",
+                 (unsigned int)dark_count, (unsigned int)medium_count,
+                 (unsigned int)light_count);
+#endif
+
+    return (uint8_t)((dark_count >= INPUT_FILTER_DARK_COUNT_MIN) &&
+                     (dark_count <= INPUT_FILTER_DARK_COUNT_MAX) &&
+                     (medium_count >= INPUT_FILTER_MEDIUM_COUNT_MIN) &&
+                     (medium_count <= INPUT_FILTER_MEDIUM_COUNT_MAX) &&
+                     (light_count >= INPUT_FILTER_LIGHT_COUNT_MIN) &&
+                     (light_count <= INPUT_FILTER_LIGHT_COUNT_MAX));
+}
+
+/**
+ * @brief Converts uint8 grayscale pixels to Q16 fixed-point input values
+ *
+ * @param src Source uint8 grayscale buffer
+ * @param len Number of pixels to convert
+ * @param dst Destination fixed-point buffer
+ */
+static void preprocess_u8_to_q16(const uint8_t *src, uint32_t len, int *dst)
+{
+    for (uint32_t index = 0U; index < len; ++index) {
+        dst[index] = (int)u8_to_q16_lut[src[index]];
+    }
+}
 
 void app_init(const app_config_t *config)
 {
@@ -31,90 +107,98 @@ void app_init(const app_config_t *config)
     camera_init(&camera_config);
 }
 
+#ifdef DEBUG
+void app_request_frame_send_from_isr(void)
+{
+    send_frame_request = 1U;
+}
+#endif
+
 void app_run(void)
 {
-    if (HAL_GPIO_ReadPin(app_config.button_gpio_port,
-                         app_config.button_gpio_pin) == GPIO_PIN_SET) {
+    uint32_t length;
+    uint32_t grayscale_length = 0U;
+    uint32_t cropped_length = 0U;
+    uint32_t resized_length = 0U;
 
-        // Trigger once per physical press and re-arm only after the button is released
-        if (button_armed == 1U) {
-            uint32_t length;
-            uint32_t grayscale_length = 0U;
-            uint32_t cropped_length = 0U;
-            uint32_t resized_length = 0U;
+    memset(frame_buffer, 0, CAMERA_FRAME_BUFFER_SIZE);
 
-#ifdef DEBUG
-            serial_print(app_config.uart, "Button press detected\r\n");
-            serial_print(app_config.uart, "Starting snapshot capture\r\n");
-#endif
-            memset(frame_buffer, 0, CAMERA_FRAME_BUFFER_SIZE);
+    length = camera_capture_frame(frame_buffer, CAMERA_FRAME_BUFFER_SIZE);
 
-            length =
-                camera_capture_frame(frame_buffer, CAMERA_FRAME_BUFFER_SIZE);
+    if (length > 0U) {
+        // Output remains in frame_buffer, compacted at the beginning
+        grayscale_length = image_yuv422_to_grayscale(frame_buffer, length, 0U);
 
-            if (length > 0U) {
-                // Output remains in frame_buffer, compacted at the beginning
-                grayscale_length =
-                    image_yuv422_to_grayscale(frame_buffer, length, 0U);
+        if (grayscale_length > 0U) {
+            // Crop 160x120 grayscale to a square 120x120 image
+            cropped_length = image_grayscale_crop_center(
+                frame_buffer, CAMERA_FRAME_WIDTH, CAMERA_FRAME_HEIGHT,
+                CROP_FRAME_WIDTH, CROP_FRAME_HEIGHT);
+        }
 
-                if (grayscale_length > 0U) {
-                    // Crop 160x120 grayscale to a square 120x120 image
-                    cropped_length = image_grayscale_crop_center(
-                        frame_buffer, CAMERA_FRAME_WIDTH, CAMERA_FRAME_HEIGHT,
-                        CROP_FRAME_WIDTH, CROP_FRAME_HEIGHT);
-                }
-
-                if (cropped_length > 0U) {
-                    // Resize 120x120 to 28x28 using bilinear interpolation
-                    resized_length = image_grayscale_resize(
-                        frame_buffer, CROP_FRAME_WIDTH, CROP_FRAME_HEIGHT,
-                        resized_frame_buffer, OUTPUT_FRAME_WIDTH,
-                        OUTPUT_FRAME_HEIGHT);
-                }
-            }
+        if (cropped_length > 0U) {
+            // Resize 120x120 to 28x28 using bilinear interpolation
+            resized_length = image_grayscale_resize(
+                frame_buffer, CROP_FRAME_WIDTH, CROP_FRAME_HEIGHT,
+                resized_frame_buffer, OUTPUT_FRAME_WIDTH, OUTPUT_FRAME_HEIGHT);
+        }
+    }
 
 #ifdef DEBUG
-            serial_print(app_config.uart, "Snapshot finished\r\n");
-            serial_print(app_config.uart, "Image size: %u bytes\r\n",
-                         (unsigned int)length);
-            serial_print(app_config.uart, "Grayscale size: %u bytes\r\n",
-                         (unsigned int)grayscale_length);
-            serial_print(app_config.uart, "Cropped size: %u bytes\r\n",
-                         (unsigned int)cropped_length);
-            serial_print(app_config.uart, "Resized size: %u bytes\r\n",
-                         (unsigned int)resized_length);
+    serial_print(app_config.uart, "Snapshot finished\r\n");
+    serial_print(app_config.uart, "Image size: %u bytes\r\n",
+                 (unsigned int)length);
+    serial_print(app_config.uart, "Grayscale size: %u bytes\r\n",
+                 (unsigned int)grayscale_length);
+    serial_print(app_config.uart, "Cropped size: %u bytes\r\n",
+                 (unsigned int)cropped_length);
+    serial_print(app_config.uart, "Resized size: %u bytes\r\n",
+                 (unsigned int)resized_length);
 #endif
 
-            if (resized_length > 0U) {
+    if (resized_length > 0U) {
+        // Validate input before NN and run only for known-like inputs
+        if (resized_length == NN_INPUT_SIZE) {
+            if (app_input_is_known(resized_frame_buffer) == 1U) {
+                preprocess_u8_to_q16(resized_frame_buffer, NN_INPUT_SIZE,
+                                     nn_input);
+
+                convnet_forward(nn_input, conv_1_output, pool_1_output,
+                                conv_2_output, pool_2_output, linear_1_output,
+                                linear_2_output, logits, predictions);
+
 #ifdef DEBUG
-                HAL_StatusTypeDef status;
-
-                serial_print(app_config.uart, "FRAME_BEGIN %u %u %u\r\n",
-                             (unsigned int)OUTPUT_FRAME_WIDTH,
-                             (unsigned int)OUTPUT_FRAME_HEIGHT,
-                             (unsigned int)resized_length);
-                // Send final 28x28 grayscale payload generated by bilinear resize
-                status = serial_send_image(
-                    app_config.uart, resized_frame_buffer, resized_length);
-
-                serial_print(app_config.uart, "\r\nFRAME_END status=%d\r\n",
-                             (int)status);
+                serial_print(app_config.uart, "NN_PRED %u\r\n",
+                             (unsigned int)predictions[0]);
 #endif
             } else {
 #ifdef DEBUG
-                serial_print(app_config.uart, "Failed to capture frame\r\n");
+                serial_print(app_config.uart, "NN_PRED unknown\r\n");
 #endif
             }
-
-            button_armed = 0U;
         }
     } else {
-        // Re-arm only on release transition and announce ready state once
-        if (button_armed == 0U) {
-            button_armed = 1U;
 #ifdef DEBUG
-            serial_print(app_config.uart, "READY\r\n");
+        serial_print(app_config.uart, "Failed to capture frame\r\n");
 #endif
-        }
     }
+
+#ifdef DEBUG
+    if (send_frame_request == 1U) {
+        HAL_StatusTypeDef status;
+
+        send_frame_request = 0U;
+
+        serial_print(app_config.uart, "FRAME_BEGIN %u %u %u\r\n",
+                     (unsigned int)OUTPUT_FRAME_WIDTH,
+                     (unsigned int)OUTPUT_FRAME_HEIGHT,
+                     (unsigned int)OUTPUT_FRAME_SIZE);
+        // Send cached 28x28 grayscale payload
+        status = serial_send_image(app_config.uart, resized_frame_buffer,
+                                   OUTPUT_FRAME_SIZE);
+
+        serial_print(app_config.uart, "\r\nFRAME_END status=%d\r\n",
+                     (int)status);
+    }
+#endif
 }
