@@ -40,7 +40,6 @@ def read_pgm(path: Path):
     @return Grayscale image as a uint8 array with shape (H, W).
     """
     data = path.read_bytes()
-    idx = 0
 
     def skip_ws_and_comments(position: int):
         while position < len(data):
@@ -60,22 +59,43 @@ def read_pgm(path: Path):
         start = position
         while position < len(data) and data[position] not in b' \t\r\n#':
             position += 1
+        if start == position:
+            raise ValueError(f'Invalid PGM header in {path}')
         return data[start:position], position
 
-    _, idx = read_token(idx)
+    magic, idx = read_token(0)
+    if magic != b'P5':
+        raise ValueError(f'Unsupported PGM format in {path}: {magic!r}')
 
     width_token, idx = read_token(idx)
     height_token, idx = read_token(idx)
-    _, idx = read_token(idx)
+    maxval_token, idx = read_token(idx)
 
     width = int(width_token)
     height = int(height_token)
-    idx = skip_ws_and_comments(idx)
+    maxval = int(maxval_token)
+
+    if maxval <= 0 or maxval > 255:
+        raise ValueError(f'Unsupported PGM maxval in {path}: {maxval}')
+
+    if idx >= len(data):
+        raise ValueError(f'Missing PGM payload in {path}')
+
+    separator = data[idx]
+    if separator not in b' \t\r\n':
+        raise ValueError(f'Invalid PGM separator in {path}')
+
+    idx += 1
+    if separator == ord('\r') and idx < len(data) and data[idx] == ord('\n'):
+        idx += 1
 
     expected = width * height
     payload = data[idx:idx + expected]
-    image = np.frombuffer(payload, dtype=np.uint8).reshape(height, width)
-    return image
+    if len(payload) != expected:
+        raise ValueError(f'Invalid payload size in {path}: '
+                         f'{len(payload)} (expected {expected})')
+
+    return np.frombuffer(payload, dtype=np.uint8).reshape(height, width)
 
 
 def run_convnet_inference(c_lib, input_q: np.ndarray):
