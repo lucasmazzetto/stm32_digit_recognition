@@ -15,8 +15,19 @@
 
 #define CROP_FRAME_HEIGHT 120U
 #define CROP_FRAME_WIDTH 120U
-#define INPUT_FILTER_DARK_PIXEL_THRESHOLD 50U
-#define INPUT_FILTER_EDGE_TAU 7U
+
+#define INPUT_FILTER_DARK_MAX_THRESHOLD 60U
+#define INPUT_FILTER_MEDIUM_MAX_THRESHOLD 150U
+
+#define INPUT_FILTER_DARK_COUNT_MIN 40U
+#define INPUT_FILTER_DARK_COUNT_MAX 150U
+
+#define INPUT_FILTER_MEDIUM_COUNT_MIN 250U
+#define INPUT_FILTER_MEDIUM_COUNT_MAX 420U
+
+#define INPUT_FILTER_LIGHT_COUNT_MIN 280U
+#define INPUT_FILTER_LIGHT_COUNT_MAX 420U
+
 #define NN_INPUT_SIZE ((uint32_t)INPUT_FLAT_SIZE)
 #define OUTPUT_FRAME_HEIGHT 28U
 #define OUTPUT_FRAME_WIDTH 28U
@@ -30,13 +41,13 @@
  */
 typedef struct
 {
-    I2C_HandleTypeDef *i2c_handle; // SCCB/I2C handle for camera register access
-    DCMI_HandleTypeDef *dcmi_handle; // DCMI handle used for frame capture
-    GPIO_TypeDef *pwdn_gpio_port; // Camera PWDN GPIO port
-    uint16_t pwdn_gpio_pin; // Camera PWDN GPIO pin
-    GPIO_TypeDef *reset_gpio_port; // Camera RESET GPIO port
-    uint16_t reset_gpio_pin; // Camera RESET GPIO pin
-    UART_HandleTypeDef *uart; // UART handle used for debug/image streaming
+    I2C_HandleTypeDef *i2c_handle;    // I2C handle for camera register access
+    DCMI_HandleTypeDef *dcmi_handle;  // DCMI handle used for frame capture
+    GPIO_TypeDef *pwdn_gpio_port;     // Camera PWDN GPIO port
+    uint16_t pwdn_gpio_pin;           // Camera PWDN GPIO pin
+    GPIO_TypeDef *reset_gpio_port;    // Camera RESET GPIO port
+    uint16_t reset_gpio_pin;          // Camera RESET GPIO pin
+    UART_HandleTypeDef *uart;         // UART handle used for streaming
 } app_config_t;
 
 /**

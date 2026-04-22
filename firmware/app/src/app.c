@@ -36,41 +36,44 @@ static int logits[BATCH_SIZE * OUTPUT_DIM];
 static unsigned int predictions[BATCH_SIZE];
 
 /**
- * @brief Fast integer-only input gate based on dark border pixels.
+ * @brief Fast integer-only known/unknown filter using intensity-bin counts.
  *
- * @param image_u8 Input grayscale image.
+ * @param image Input grayscale image.
  * @return 1 if input is known-like, 0 if unknown-like.
  */
-static uint8_t app_input_is_known(const uint8_t *image_u8)
+static uint8_t app_input_is_known(const uint8_t *image)
 {
-    const uint32_t width = OUTPUT_FRAME_WIDTH;
-    const uint32_t height = OUTPUT_FRAME_HEIGHT;
-    const uint32_t last_row_offset = (height - 1U) * width;
+    uint32_t dark_count = 0U;
+    uint32_t medium_count = 0U;
+    uint32_t light_count = 0U;
 
-    // Count dark pixels only on the 1-pixel image border.
-    uint32_t edge_dark_count = 0U;
+    for (uint32_t index = 0U; index < OUTPUT_FRAME_SIZE; ++index) {
+        const uint8_t pixel = image[index];
 
-    // Top row + bottom row.
-    for (uint32_t x = 0U; x < width; ++x) {
-        edge_dark_count +=
-            (uint32_t)(image_u8[x] < INPUT_FILTER_DARK_PIXEL_THRESHOLD);
-
-
-        edge_dark_count += (uint32_t)(image_u8[last_row_offset + x] <
-                                      INPUT_FILTER_DARK_PIXEL_THRESHOLD);
+        if (pixel < INPUT_FILTER_DARK_MAX_THRESHOLD) {
+            dark_count += 1U;
+        } else if (pixel < INPUT_FILTER_MEDIUM_MAX_THRESHOLD) {
+            medium_count += 1U;
+        } else {
+            light_count += 1U;
+        }
     }
 
-    // Left/right columns excluding corners (already counted by top/bottom rows).
-    for (uint32_t y = 1U; y < (height - 1U); ++y) {
-        edge_dark_count += (uint32_t)(image_u8[y * width] <
-                                      INPUT_FILTER_DARK_PIXEL_THRESHOLD);
-                                      
-        edge_dark_count += (uint32_t)(image_u8[y * width + (width - 1U)] <
-                                      INPUT_FILTER_DARK_PIXEL_THRESHOLD);
-    }
+    // Accept as known only when all three intensity-bin counts stay within
+    // the calibrated known-sample ranges.
+#ifdef DEBUG
+    serial_print(app_config.uart,
+                 "FILTER_COUNTS dark=%u medium=%u light=%u\r\n",
+                 (unsigned int)dark_count, (unsigned int)medium_count,
+                 (unsigned int)light_count);
+#endif
 
-    // White background + centered black digit => low dark pixels on border.
-    return (uint8_t)(edge_dark_count <= INPUT_FILTER_EDGE_TAU);
+    return (uint8_t)((dark_count >= INPUT_FILTER_DARK_COUNT_MIN) &&
+                     (dark_count <= INPUT_FILTER_DARK_COUNT_MAX) &&
+                     (medium_count >= INPUT_FILTER_MEDIUM_COUNT_MIN) &&
+                     (medium_count <= INPUT_FILTER_MEDIUM_COUNT_MAX) &&
+                     (light_count >= INPUT_FILTER_LIGHT_COUNT_MIN) &&
+                     (light_count <= INPUT_FILTER_LIGHT_COUNT_MAX));
 }
 
 /**
