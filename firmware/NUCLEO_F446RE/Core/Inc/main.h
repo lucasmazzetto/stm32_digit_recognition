@@ -57,12 +57,22 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define DISPLAY_D_Pin GPIO_PIN_0
+#define DISPLAY_D_GPIO_Port GPIOC
+#define DISPLAY_E_Pin GPIO_PIN_1
+#define DISPLAY_E_GPIO_Port GPIOC
+#define DISPLAY_F_Pin GPIO_PIN_0
+#define DISPLAY_F_GPIO_Port GPIOA
+#define DISPLAY_A_Pin GPIO_PIN_1
+#define DISPLAY_A_GPIO_Port GPIOA
 #define USART_TX_Pin GPIO_PIN_2
 #define USART_TX_GPIO_Port GPIOA
 #define USART_RX_Pin GPIO_PIN_3
 #define USART_RX_GPIO_Port GPIOA
 #define LD2_Pin GPIO_PIN_5
 #define LD2_GPIO_Port GPIOA
+#define DISPLAY_B_Pin GPIO_PIN_0
+#define DISPLAY_B_GPIO_Port GPIOB
 #define PWDN_Pin GPIO_PIN_1
 #define PWDN_GPIO_Port GPIOB
 #define RESET_Pin GPIO_PIN_12
@@ -71,6 +81,10 @@ void Error_Handler(void);
 #define TMS_GPIO_Port GPIOA
 #define TCK_Pin GPIO_PIN_14
 #define TCK_GPIO_Port GPIOA
+#define DISPLAY_C_Pin GPIO_PIN_10
+#define DISPLAY_C_GPIO_Port GPIOC
+#define DISPLAY_G_Pin GPIO_PIN_2
+#define DISPLAY_G_GPIO_Port GPIOD
 #define SWO_Pin GPIO_PIN_3
 #define SWO_GPIO_Port GPIOB
 

@@ -95,6 +95,34 @@ RCC | HSE-External-Oscillator pin reservation | RCC_OSC_OUT | PH1/OSC_OUT | Crys
 RCC | LSE-External-Oscillator pin reservation | RCC_OSC32_IN | PC14/OSC32_IN | Crystal pins | -
 RCC | LSE-External-Oscillator pin reservation | RCC_OSC32_OUT | PC15/OSC32_OUT | Crystal pins | -
 
+## 7-Segment Display Mapping
+
+Display type is `common-cathode`, so segment ON means GPIO `HIGH` (`3.3V`).
+
+Corresponding STM32 pins:
+
+```text
+      --PA1--
+     |       |
+    PA0     PB0
+     |       |
+      --PD2--
+     |       |
+    PC1     PC10
+     |       |
+      --PC0--
+```
+
+Segment | STM32 Pin
+--- | ---
+a | PA1
+b | PB0
+c | PC10
+d | PC0
+e | PC1
+f | PA0
+g | PD2
+
 ## DCMI configuration
 
 OPTION | VALUE
