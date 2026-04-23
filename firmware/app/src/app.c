@@ -105,6 +105,7 @@ void app_init(const app_config_t *config)
     camera_config.reset_gpio_pin = app_config.reset_gpio_pin;
 
     camera_init(&camera_config);
+    display_init(&app_config.display_config);
 }
 
 #ifdef DEBUG
@@ -166,12 +167,14 @@ void app_run(void)
                 convnet_forward(nn_input, conv_1_output, pool_1_output,
                                 conv_2_output, pool_2_output, linear_1_output,
                                 linear_2_output, logits, predictions);
-
+                
+                display_show_digit(predictions[0]);
 #ifdef DEBUG
                 serial_print(app_config.uart, "NN_PRED %u\r\n",
                              (unsigned int)predictions[0]);
 #endif
             } else {
+                display_show_digit(-1);
 #ifdef DEBUG
                 serial_print(app_config.uart, "NN_PRED unknown\r\n");
 #endif

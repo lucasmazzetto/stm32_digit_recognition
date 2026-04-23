@@ -9,6 +9,7 @@
 
 #include "camera.h"
 #include "convnet.h"
+#include "display.h"
 #include "image.h"
 #include "lut.h"
 #include "serial.h"
@@ -48,6 +49,7 @@ typedef struct
     GPIO_TypeDef *reset_gpio_port;    // Camera RESET GPIO port
     uint16_t reset_gpio_pin;          // Camera RESET GPIO pin
     UART_HandleTypeDef *uart;         // UART handle used for streaming
+    display_pins_t display_config;  // 7-segment display GPIO mapping
 } app_config_t;
 
 /**
