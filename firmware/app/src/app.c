@@ -1,4 +1,5 @@
 #include "app.h"
+#include "distance.h"
 
 #ifdef DEBUG
 static volatile uint8_t send_frame_request = 0U;
@@ -36,44 +37,146 @@ static int logits[BATCH_SIZE * OUTPUT_DIM];
 static unsigned int predictions[BATCH_SIZE];
 
 /**
- * @brief Fast integer-only known/unknown filter using intensity-bin counts.
+ * Cosine similarity and distance are represented in an implicit fixed-point
+ * scale with DISTANCE_FRAC_BITS fractional bits:
+ * - similarity ~= 1.0 maps to APP_SIMILARITY_MAX
+ * - distance = APP_SIMILARITY_MAX - similarity
+ * - DISTANCE_THRESHOLD is stored in the same scale
+ */
+#define APP_SIMILARITY_SCALE (1 << DISTANCE_FRAC_BITS)
+#define APP_SIMILARITY_MAX (APP_SIMILARITY_SCALE - 1)
+#define APP_SIMILARITY_MIN (-APP_SIMILARITY_SCALE)
+
+#if DISTANCE_VECTOR_SIZE != OUTPUT_FRAME_SIZE
+#error "DISTANCE_VECTOR_SIZE must match OUTPUT_FRAME_SIZE"
+#endif
+
+/**
+ * @brief Integer square root for uint64_t values.
  *
- * @param image Input grayscale image.
+ * @details This is a pure integer Newton iteration. It is deterministic and
+ *          portable to MCU targets, avoiding any floating-point dependency in
+ *          the distance computation path.
+ *
+ * @param value Non-negative input.
+ * @return floor(sqrt(value)).
+ */
+static uint32_t app_isqrt_u64(uint64_t value)
+{
+    uint64_t x;
+    uint64_t y;
+
+    if (value == 0U) {
+        return 0U;
+    }
+
+    x = value;
+    y = (x + 1U) / 2U;
+
+    while (y < x) {
+        x = y;
+        y = (x + (value / x)) / 2U;
+    }
+
+    return (uint32_t)x;
+}
+
+/**
+ * @brief Computes the L2 norm of the generated distance center vector.
+ *
+ * @details This norm is shared by all frame distance computations, because the
+ *          center vector is constant for a given generated distance file.
+ *
+ * @return Integer norm of distance_center_vector.
+ */
+static uint32_t app_compute_center_norm(void)
+{
+    uint64_t norm_sq = 0U;
+
+    for (uint32_t index = 0U; index < DISTANCE_VECTOR_SIZE; ++index) {
+        const int32_t center_value = (int32_t)distance_center_vector[index];
+        norm_sq += (uint64_t)(center_value * center_value);
+    }
+
+    return app_isqrt_u64(norm_sq);
+}
+
+/**
+ * @brief Computes integer cosine distance between input image and center.
+ *
+ * @details The full computation is integer-only:
+ *          1) dot product and squared norms
+ *          2) integer sqrt for both norms
+ *          3) scaled cosine similarity using rounded integer division
+ *          4) distance = max_similarity - similarity
+ *
+ *          The returned value uses the same implicit fixed-point scale as
+ *          DISTANCE_THRESHOLD, so it can be compared directly.
+ *
+ * @param image Input grayscale image with DISTANCE_VECTOR_SIZE pixels.
+ * @return Integer cosine distance in implicit fixed-point scale.
+ */
+static int32_t app_compute_cosine_distance(const uint8_t *image)
+{
+    uint64_t dot = 0U;
+    uint64_t norm_image_sq = 0U;
+    const uint32_t center_norm = app_compute_center_norm();
+    uint32_t image_norm;
+    uint64_t denominator;
+    int32_t similarity;
+
+    for (uint32_t index = 0U; index < DISTANCE_VECTOR_SIZE; ++index) {
+        const int32_t image_value = (int32_t)image[index];
+        const int32_t center_value = (int32_t)distance_center_vector[index];
+
+        // Dot product term for cosine numerator.
+        dot += (uint64_t)(image_value * center_value);
+        // Squared norm term for input vector magnitude.
+        norm_image_sq += (uint64_t)(image_value * image_value);
+    }
+
+    image_norm = app_isqrt_u64(norm_image_sq);
+    denominator = (uint64_t)image_norm * (uint64_t)center_norm;
+
+    if (denominator == 0U) {
+        // Degenerate case: return neutral similarity, resulting in max distance.
+        similarity = 0;
+    } else {
+        similarity = (int32_t)(((dot << DISTANCE_FRAC_BITS) +
+                                (denominator / 2U)) /
+                               denominator);
+    }
+
+    // Clamp to the configured similarity range represented in this fixed scale.
+    if (similarity > APP_SIMILARITY_MAX) {
+        similarity = APP_SIMILARITY_MAX;
+    } else if (similarity < APP_SIMILARITY_MIN) {
+        similarity = APP_SIMILARITY_MIN;
+    }
+
+    return (APP_SIMILARITY_MAX - similarity);
+}
+
+/**
+ * @brief Integer cosine-distance known/unknown gate.
+ *
+ * @details If computed distance is less than or equal to DISTANCE_THRESHOLD,
+ *          input is considered known-like. Otherwise it is unknown-like.
+ *
+ * @param image Input grayscale image with DISTANCE_VECTOR_SIZE pixels.
  * @return 1 if input is known-like, 0 if unknown-like.
  */
 static uint8_t app_input_is_known(const uint8_t *image)
 {
-    uint32_t dark_count = 0U;
-    uint32_t medium_count = 0U;
-    uint32_t light_count = 0U;
+    const int32_t distance = app_compute_cosine_distance(image);
 
-    for (uint32_t index = 0U; index < OUTPUT_FRAME_SIZE; ++index) {
-        const uint8_t pixel = image[index];
-
-        if (pixel < INPUT_FILTER_DARK_MAX_THRESHOLD) {
-            dark_count += 1U;
-        } else if (pixel < INPUT_FILTER_MEDIUM_MAX_THRESHOLD) {
-            medium_count += 1U;
-        } else {
-            light_count += 1U;
-        }
-    }
-
-    // Accept as known only when all three intensity-bin counts stay within
-    // the calibrated known-sample ranges.
 #ifdef DEBUG
     serial_print(app_config.uart,
-                 "FILTER_COUNTS dark=%u medium=%u light=%u\r\n",
-                 (unsigned int)dark_count, (unsigned int)medium_count,
-                 (unsigned int)light_count);
+                 "FILTER_DISTANCE value=%ld threshold=%d\r\n",
+                 (long)distance, (int)DISTANCE_THRESHOLD);
 #endif
 
-    return (uint8_t)((dark_count >= INPUT_FILTER_DARK_COUNT_MIN) &&
-                     (dark_count <= INPUT_FILTER_DARK_COUNT_MAX) &&
-                     (medium_count >= INPUT_FILTER_MEDIUM_COUNT_MIN) &&
-                     (medium_count <= INPUT_FILTER_MEDIUM_COUNT_MAX) &&
-                     (light_count >= INPUT_FILTER_LIGHT_COUNT_MIN) &&
-                     (light_count <= INPUT_FILTER_LIGHT_COUNT_MAX));
+    return (uint8_t)(distance <= DISTANCE_THRESHOLD);
 }
 
 /**
