@@ -18,14 +18,14 @@ def generate_u8_to_q16_lut(frac_bits: int = 16):
     if frac_bits < 0:
         raise ValueError(f'frac_bits must be >= 0, got {frac_bits}')
 
-    values_u8 = np.arange(256, dtype=np.uint8)
-    normalized_f32 = (values_u8.astype(np.float32) / 255.0 - 0.5) / 0.5
-    fp16_values = normalized_f32.astype(np.float16)
+    pixel_values = np.arange(256, dtype=np.uint8)
+    normalized_values = (pixel_values.astype(np.float32) / 255.0 - 0.5) / 0.5
+    rounded_values = normalized_values.astype(np.float16)
     scale = float(1 << frac_bits)
     
-    q_values = np.rint(fp16_values.astype(np.float32) * scale).astype(np.int32)
+    lut_values = np.rint(rounded_values.astype(np.float32) * scale).astype(np.int32)
 
-    return np.ascontiguousarray(q_values)
+    return np.ascontiguousarray(lut_values)
 
 
 def write_header_file(path: Path, guard: str, lut_symbol: str, size_symbol: str):
