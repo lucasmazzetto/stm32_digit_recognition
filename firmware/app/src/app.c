@@ -1,4 +1,5 @@
 #include "app.h"
+#include "distance.h"
 
 #ifdef DEBUG
 static volatile uint8_t send_frame_request = 0U;
@@ -36,44 +37,195 @@ static int logits[BATCH_SIZE * OUTPUT_DIM];
 static unsigned int predictions[BATCH_SIZE];
 
 /**
- * @brief Fast integer-only known/unknown filter using intensity-bin counts.
- *
- * @param image Input grayscale image.
- * @return 1 if input is known-like, 0 if unknown-like.
+ * Cosine similarity and distance are represented in an implicit fixed-point
+ * scale with DISTANCE_FRAC_BITS fractional bits:
+ * - similarity ~= 1.0 maps to APP_SIMILARITY_MAX
+ * - distance = APP_SIMILARITY_MAX - similarity
+ * - image/logits thresholds are stored in the same scale
  */
-static uint8_t app_input_is_known(const uint8_t *image)
-{
-    uint32_t dark_count = 0U;
-    uint32_t medium_count = 0U;
-    uint32_t light_count = 0U;
+#define APP_SIMILARITY_SCALE (1 << DISTANCE_FRAC_BITS)
+#define APP_SIMILARITY_MAX (APP_SIMILARITY_SCALE - 1)
+#define APP_SIMILARITY_MIN (-APP_SIMILARITY_SCALE)
 
-    for (uint32_t index = 0U; index < OUTPUT_FRAME_SIZE; ++index) {
-        const uint8_t pixel = image[index];
-
-        if (pixel < INPUT_FILTER_DARK_MAX_THRESHOLD) {
-            dark_count += 1U;
-        } else if (pixel < INPUT_FILTER_MEDIUM_MAX_THRESHOLD) {
-            medium_count += 1U;
-        } else {
-            light_count += 1U;
-        }
-    }
-
-    // Accept as known only when all three intensity-bin counts stay within
-    // the calibrated known-sample ranges.
-#ifdef DEBUG
-    serial_print(app_config.uart,
-                 "FILTER_COUNTS dark=%u medium=%u light=%u\r\n",
-                 (unsigned int)dark_count, (unsigned int)medium_count,
-                 (unsigned int)light_count);
+#if DISTANCE_IMAGE_VECTOR_SIZE != OUTPUT_FRAME_SIZE
+#error "DISTANCE_IMAGE_VECTOR_SIZE must match OUTPUT_FRAME_SIZE"
 #endif
 
-    return (uint8_t)((dark_count >= INPUT_FILTER_DARK_COUNT_MIN) &&
-                     (dark_count <= INPUT_FILTER_DARK_COUNT_MAX) &&
-                     (medium_count >= INPUT_FILTER_MEDIUM_COUNT_MIN) &&
-                     (medium_count <= INPUT_FILTER_MEDIUM_COUNT_MAX) &&
-                     (light_count >= INPUT_FILTER_LIGHT_COUNT_MIN) &&
-                     (light_count <= INPUT_FILTER_LIGHT_COUNT_MAX));
+/**
+ * @brief Integer square root for uint64_t values.
+ *
+ * @details This is a pure integer Newton iteration. It is deterministic and
+ *          portable to MCU targets, avoiding any floating-point dependency in
+ *          the distance computation path.
+ *
+ * @param value Non-negative input.
+ * @return floor(sqrt(value)).
+ */
+static uint32_t app_isqrt_u64(uint64_t value)
+{
+    uint64_t x;
+    uint64_t y;
+
+    if (value == 0U) {
+        return 0U;
+    }
+
+    x = value;
+    y = (x + 1U) / 2U;
+
+    while (y < x) {
+        x = y;
+        y = (x + (value / x)) / 2U;
+    }
+
+    return (uint32_t)x;
+}
+
+/**
+ * @brief Computes the L2 norm of one uint8 center vector.
+ */
+static uint32_t app_compute_center_norm_u8(const uint8_t *center_vector,
+                                           uint32_t vector_size)
+{
+    uint64_t norm_sq = 0U;
+
+    for (uint32_t index = 0U; index < vector_size; ++index) {
+        const int32_t center_value = (int32_t)center_vector[index];
+        norm_sq += (uint64_t)(center_value * center_value);
+    }
+
+    return app_isqrt_u64(norm_sq);
+}
+
+/**
+ * @brief Computes integer cosine distance between input image and uint8 center.
+ *
+ * @param image Input grayscale image with DISTANCE_IMAGE_VECTOR_SIZE pixels.
+ * @param center_vector Class center vector for image.
+ * @return Integer cosine distance in implicit fixed-point scale.
+ */
+static int32_t app_compute_cosine_distance_u8(const uint8_t *image,
+                                              const uint8_t *center_vector)
+{
+    uint64_t dot = 0U;
+    uint64_t norm_image_sq = 0U;
+    const uint32_t center_norm = app_compute_center_norm_u8(
+        center_vector, DISTANCE_IMAGE_VECTOR_SIZE
+    );
+    uint32_t image_norm;
+    uint64_t denominator;
+    int32_t similarity;
+
+    for (uint32_t index = 0U; index < DISTANCE_IMAGE_VECTOR_SIZE; ++index) {
+        const int32_t image_value = (int32_t)image[index];
+        const int32_t center_value = (int32_t)center_vector[index];
+        dot += (uint64_t)(image_value * center_value);
+        norm_image_sq += (uint64_t)(image_value * image_value);
+    }
+
+    image_norm = app_isqrt_u64(norm_image_sq);
+    denominator = (uint64_t)image_norm * (uint64_t)center_norm;
+
+    if (denominator == 0U) {
+        similarity = 0;
+    } else {
+        similarity = (int32_t)(((dot << DISTANCE_FRAC_BITS) +
+                                (denominator / 2U)) /
+                               denominator);
+    }
+
+    if (similarity > APP_SIMILARITY_MAX) {
+        similarity = APP_SIMILARITY_MAX;
+    } else if (similarity < APP_SIMILARITY_MIN) {
+        similarity = APP_SIMILARITY_MIN;
+    }
+
+    return (APP_SIMILARITY_MAX - similarity);
+}
+
+/**
+ * @brief Computes integer cosine distance between logits and int32 center.
+ *
+ * @param logits_vector Logits output vector [DISTANCE_LOGITS_VECTOR_SIZE].
+ * @param center_vector Class center vector for logits.
+ * @return Integer cosine distance in implicit fixed-point scale.
+ */
+static int32_t app_compute_cosine_distance_i32(const int *logits_vector,
+                                               const int32_t *center_vector)
+{
+    int64_t dot = 0;
+    uint64_t norm_logits_sq = 0U;
+    uint64_t norm_center_sq = 0U;
+    uint32_t logits_norm;
+    uint32_t center_norm;
+    uint64_t denominator;
+    int32_t similarity;
+
+    for (uint32_t index = 0U; index < DISTANCE_LOGITS_VECTOR_SIZE; ++index) {
+        const int64_t logits_value = (int64_t)logits_vector[index];
+        const int64_t center_value = (int64_t)center_vector[index];
+        dot += logits_value * center_value;
+        norm_logits_sq += (uint64_t)(logits_value * logits_value);
+        norm_center_sq += (uint64_t)(center_value * center_value);
+    }
+
+    logits_norm = app_isqrt_u64(norm_logits_sq);
+    center_norm = app_isqrt_u64(norm_center_sq);
+    denominator = (uint64_t)logits_norm * (uint64_t)center_norm;
+
+    if (denominator == 0U) {
+        similarity = 0;
+    } else if (dot >= 0) {
+        similarity = (int32_t)((((uint64_t)dot << DISTANCE_FRAC_BITS) +
+                                (denominator / 2U)) /
+                               denominator);
+    } else {
+        similarity = -(int32_t)((((uint64_t)(-dot) << DISTANCE_FRAC_BITS) +
+                                 (denominator / 2U)) /
+                                denominator);
+    }
+
+    if (similarity > APP_SIMILARITY_MAX) {
+        similarity = APP_SIMILARITY_MAX;
+    } else if (similarity < APP_SIMILARITY_MIN) {
+        similarity = APP_SIMILARITY_MIN;
+    }
+
+    return (APP_SIMILARITY_MAX - similarity);
+}
+
+/**
+ * @brief Image+logits class-wise known/unknown gate.
+ *
+ * @param image Input grayscale image with DISTANCE_IMAGE_VECTOR_SIZE pixels.
+ * @param class_id Predicted class index used to select class center/thresholds.
+ * @return 1 if input is known-like, 0 if unknown-like.
+ */
+static uint8_t app_input_is_known(const uint8_t *image, uint32_t class_id)
+{
+    const int32_t image_distance = app_compute_cosine_distance_u8(
+        image, distance_image_center_vectors[class_id]
+    );
+    const int32_t logits_distance = app_compute_cosine_distance_i32(
+        logits, distance_logits_center_vectors[class_id]
+    );
+    const int32_t image_threshold = distance_image_thresholds[class_id];
+    const int32_t logits_threshold = distance_logits_thresholds[class_id];
+    const uint8_t image_known = (uint8_t)(image_distance <= image_threshold);
+    const uint8_t logits_known = (uint8_t)(logits_distance <= logits_threshold);
+
+#ifdef DEBUG
+    serial_print(app_config.uart,
+                 "FILTER_IMAGE class=%u value=%ld threshold=%ld pass=%u\r\n",
+                 (unsigned int)class_id, (long)image_distance,
+                 (long)image_threshold, (unsigned int)image_known);
+    serial_print(app_config.uart,
+                 "FILTER_LOGITS class=%u value=%ld threshold=%ld pass=%u\r\n",
+                 (unsigned int)class_id, (long)logits_distance,
+                 (long)logits_threshold, (unsigned int)logits_known);
+#endif
+
+    return (uint8_t)(image_known & logits_known);
 }
 
 /**
@@ -158,16 +310,14 @@ void app_run(void)
 #endif
 
     if (resized_length > 0U) {
-        // Validate input before NN and run only for known-like inputs
         if (resized_length == NN_INPUT_SIZE) {
-            if (app_input_is_known(resized_frame_buffer) == 1U) {
-                preprocess_u8_to_q16(resized_frame_buffer, NN_INPUT_SIZE,
-                                     nn_input);
+            preprocess_u8_to_q16(resized_frame_buffer, NN_INPUT_SIZE, nn_input);
 
-                convnet_forward(nn_input, conv_1_output, pool_1_output,
-                                conv_2_output, pool_2_output, linear_1_output,
-                                linear_2_output, logits, predictions);
-                
+            convnet_forward(nn_input, conv_1_output, pool_1_output,
+                            conv_2_output, pool_2_output, linear_1_output,
+                            linear_2_output, logits, predictions);
+
+            if (app_input_is_known(resized_frame_buffer, predictions[0]) == 1U) {
                 display_show_digit(predictions[0]);
 #ifdef DEBUG
                 serial_print(app_config.uart, "NN_PRED %u\r\n",
