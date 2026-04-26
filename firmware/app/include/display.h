@@ -27,9 +27,9 @@ typedef struct
 typedef struct
 {
     display_pin_t pins[DISPLAY_SEGMENT_COUNT];
-} display_pins_t;
+} display_config_t;
 
-void display_init(const display_pins_t *config);
+void display_init(const display_config_t *config);
 uint8_t display_decode(uint8_t value);
 void display_write_mask(uint8_t segment_mask);
 void display_show_digit(int32_t value);

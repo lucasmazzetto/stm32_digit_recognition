@@ -2,7 +2,7 @@
 
 #include <stddef.h>
 
-static display_pins_t display_config;
+static display_config_t display_config;
 static uint8_t display_initialized = 0U;
 
 uint8_t display_decode(uint8_t value)
@@ -59,7 +59,7 @@ void display_write_mask(uint8_t segment_mask)
     }
 }
 
-void display_init(const display_pins_t *config)
+void display_init(const display_config_t *config)
 {
     if (config == NULL) {
         display_initialized = 0U;

@@ -323,7 +323,7 @@ if __name__ == '__main__':
     
     parser.add_argument('--output-dir', type=Path, default=default_output_dir)
     parser.add_argument('--lib-path', '--lib_path', type=Path, default=default_lib)
-    parser.add_argument('--percentile', type=float, default=95.0)
+    parser.add_argument('--percentile', type=float, default=99.0)
     parser.add_argument('--frac-bits', type=int, default=16)
     parser.add_argument('--class-count', type=int, default=10)
     parser.add_argument('--image-vector-size', type=int, default=(28 * 28))

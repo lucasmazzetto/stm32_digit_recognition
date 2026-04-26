@@ -37,21 +37,6 @@ static int logits[BATCH_SIZE * OUTPUT_DIM];
 static unsigned int predictions[BATCH_SIZE];
 
 /**
- * Cosine similarity and distance are represented in an implicit fixed-point
- * scale with DISTANCE_FRAC_BITS fractional bits:
- * - similarity ~= 1.0 maps to APP_SIMILARITY_MAX
- * - distance = APP_SIMILARITY_MAX - similarity
- * - image/logits thresholds are stored in the same scale
- */
-#define APP_SIMILARITY_SCALE (1 << DISTANCE_FRAC_BITS)
-#define APP_SIMILARITY_MAX (APP_SIMILARITY_SCALE - 1)
-#define APP_SIMILARITY_MIN (-APP_SIMILARITY_SCALE)
-
-#if DISTANCE_IMAGE_VECTOR_SIZE != OUTPUT_FRAME_SIZE
-#error "DISTANCE_IMAGE_VECTOR_SIZE must match OUTPUT_FRAME_SIZE"
-#endif
-
-/**
  * @brief Integer square root for uint64_t values.
  *
  * @details This is a pure integer Newton iteration. It is deterministic and
@@ -61,7 +46,7 @@ static unsigned int predictions[BATCH_SIZE];
  * @param value Non-negative input.
  * @return floor(sqrt(value)).
  */
-static uint32_t app_isqrt_u64(uint64_t value)
+static uint32_t app_isqrt(uint64_t value)
 {
     uint64_t x;
     uint64_t y;
@@ -82,10 +67,14 @@ static uint32_t app_isqrt_u64(uint64_t value)
 }
 
 /**
- * @brief Computes the L2 norm of one uint8 center vector.
+ * @brief Computes the L2 norm of one center vector.
+ *
+ * @param center_vector Class center vector in uint8 domain.
+ * @param vector_size Number of elements in center vector.
+ * @return Integer L2 norm.
  */
-static uint32_t app_compute_center_norm_u8(const uint8_t *center_vector,
-                                           uint32_t vector_size)
+static uint32_t app_compute_center_norm(const uint8_t *center_vector,
+                                        uint32_t vector_size)
 {
     uint64_t norm_sq = 0U;
 
@@ -94,24 +83,25 @@ static uint32_t app_compute_center_norm_u8(const uint8_t *center_vector,
         norm_sq += (uint64_t)(center_value * center_value);
     }
 
-    return app_isqrt_u64(norm_sq);
+    return app_isqrt(norm_sq);
 }
 
 /**
- * @brief Computes integer cosine distance between input image and uint8 center.
+ * @brief Computes integer cosine distance between input image and class center.
  *
- * @param image Input grayscale image with DISTANCE_IMAGE_VECTOR_SIZE pixels.
- * @param center_vector Class center vector for image.
+ * @param image Input grayscale image vector (uint8_t) with
+ *        DISTANCE_IMAGE_VECTOR_SIZE elements.
+ * @param center_vector Class center vector in image domain (uint8_t).
  * @return Integer cosine distance in implicit fixed-point scale.
  */
-static int32_t app_compute_cosine_distance_u8(const uint8_t *image,
-                                              const uint8_t *center_vector)
+static int32_t app_compute_image_distance(const uint8_t *image,
+                                          const uint8_t *center_vector)
 {
+    const uint32_t center_norm =
+        app_compute_center_norm(center_vector, DISTANCE_IMAGE_VECTOR_SIZE);
+
     uint64_t dot = 0U;
     uint64_t norm_image_sq = 0U;
-    const uint32_t center_norm = app_compute_center_norm_u8(
-        center_vector, DISTANCE_IMAGE_VECTOR_SIZE
-    );
     uint32_t image_norm;
     uint64_t denominator;
     int32_t similarity;
@@ -119,19 +109,20 @@ static int32_t app_compute_cosine_distance_u8(const uint8_t *image,
     for (uint32_t index = 0U; index < DISTANCE_IMAGE_VECTOR_SIZE; ++index) {
         const int32_t image_value = (int32_t)image[index];
         const int32_t center_value = (int32_t)center_vector[index];
+
         dot += (uint64_t)(image_value * center_value);
         norm_image_sq += (uint64_t)(image_value * image_value);
     }
 
-    image_norm = app_isqrt_u64(norm_image_sq);
+    image_norm = app_isqrt(norm_image_sq);
     denominator = (uint64_t)image_norm * (uint64_t)center_norm;
 
     if (denominator == 0U) {
         similarity = 0;
     } else {
-        similarity = (int32_t)(((dot << DISTANCE_FRAC_BITS) +
-                                (denominator / 2U)) /
-                               denominator);
+        similarity =
+            (int32_t)(((dot << DISTANCE_FRAC_BITS) + (denominator / 2U)) /
+                      denominator);
     }
 
     if (similarity > APP_SIMILARITY_MAX) {
@@ -144,14 +135,14 @@ static int32_t app_compute_cosine_distance_u8(const uint8_t *image,
 }
 
 /**
- * @brief Computes integer cosine distance between logits and int32 center.
+ * @brief Computes integer cosine distance between logits and class center.
  *
- * @param logits_vector Logits output vector [DISTANCE_LOGITS_VECTOR_SIZE].
- * @param center_vector Class center vector for logits.
+ * @param logits_vector Logits output vector in model integer domain.
+ * @param center_vector Class center vector in logits domain (int32_t).
  * @return Integer cosine distance in implicit fixed-point scale.
  */
-static int32_t app_compute_cosine_distance_i32(const int *logits_vector,
-                                               const int32_t *center_vector)
+static int32_t app_compute_logits_distance(const int *logits_vector,
+                                           const int32_t *center_vector)
 {
     int64_t dot = 0;
     uint64_t norm_logits_sq = 0U;
@@ -164,13 +155,15 @@ static int32_t app_compute_cosine_distance_i32(const int *logits_vector,
     for (uint32_t index = 0U; index < DISTANCE_LOGITS_VECTOR_SIZE; ++index) {
         const int64_t logits_value = (int64_t)logits_vector[index];
         const int64_t center_value = (int64_t)center_vector[index];
+
         dot += logits_value * center_value;
+
         norm_logits_sq += (uint64_t)(logits_value * logits_value);
         norm_center_sq += (uint64_t)(center_value * center_value);
     }
 
-    logits_norm = app_isqrt_u64(norm_logits_sq);
-    center_norm = app_isqrt_u64(norm_center_sq);
+    logits_norm = app_isqrt(norm_logits_sq);
+    center_norm = app_isqrt(norm_center_sq);
     denominator = (uint64_t)logits_norm * (uint64_t)center_norm;
 
     if (denominator == 0U) {
@@ -203,16 +196,20 @@ static int32_t app_compute_cosine_distance_i32(const int *logits_vector,
  */
 static uint8_t app_input_is_known(const uint8_t *image, uint32_t class_id)
 {
-    const int32_t image_distance = app_compute_cosine_distance_u8(
-        image, distance_image_center_vectors[class_id]
-    );
-    const int32_t logits_distance = app_compute_cosine_distance_i32(
-        logits, distance_logits_center_vectors[class_id]
-    );
+    const int32_t image_distance = app_compute_image_distance(
+        image, distance_image_center_vectors[class_id]);
+
+    const int32_t logits_distance = app_compute_logits_distance(
+        logits, distance_logits_center_vectors[class_id]);
+
     const int32_t image_threshold = distance_image_thresholds[class_id];
+
     const int32_t logits_threshold = distance_logits_thresholds[class_id];
+
     const uint8_t image_known = (uint8_t)(image_distance <= image_threshold);
-    const uint8_t logits_known = (uint8_t)(logits_distance <= logits_threshold);
+
+    const uint8_t logits_known =
+        (uint8_t)(logits_distance <= logits_threshold);
 
 #ifdef DEBUG
     serial_print(app_config.uart,
@@ -229,13 +226,14 @@ static uint8_t app_input_is_known(const uint8_t *image, uint32_t class_id)
 }
 
 /**
- * @brief Converts uint8 grayscale pixels to Q16 fixed-point input values
+ * @brief Converts grayscale image pixels to model fixed-point input values.
  *
- * @param src Source uint8 grayscale buffer
+ * @param src Source grayscale buffer (uint8_t).
  * @param len Number of pixels to convert
- * @param dst Destination fixed-point buffer
+ * @param dst Destination model input buffer (fixed-point int).
  */
-static void preprocess_u8_to_q16(const uint8_t *src, uint32_t len, int *dst)
+static void preprocess_image_to_model_input(const uint8_t *src, uint32_t len,
+                                            int *dst)
 {
     for (uint32_t index = 0U; index < len; ++index) {
         dst[index] = (int)u8_to_q16_lut[src[index]];
@@ -311,13 +309,17 @@ void app_run(void)
 
     if (resized_length > 0U) {
         if (resized_length == NN_INPUT_SIZE) {
-            preprocess_u8_to_q16(resized_frame_buffer, NN_INPUT_SIZE, nn_input);
+            preprocess_image_to_model_input(resized_frame_buffer,
+                                            NN_INPUT_SIZE, nn_input);
 
             convnet_forward(nn_input, conv_1_output, pool_1_output,
                             conv_2_output, pool_2_output, linear_1_output,
                             linear_2_output, logits, predictions);
 
-            if (app_input_is_known(resized_frame_buffer, predictions[0]) == 1U) {
+            const uint8_t is_known =
+                app_input_is_known(resized_frame_buffer, predictions[0]);
+
+            if (is_known == 1U) {
                 display_show_digit(predictions[0]);
 #ifdef DEBUG
                 serial_print(app_config.uart, "NN_PRED %u\r\n",

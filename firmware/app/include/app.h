@@ -34,6 +34,10 @@
 #define OUTPUT_FRAME_WIDTH 28U
 #define OUTPUT_FRAME_SIZE (OUTPUT_FRAME_WIDTH * OUTPUT_FRAME_HEIGHT)
 
+#define APP_SIMILARITY_SCALE (1 << DISTANCE_FRAC_BITS)
+#define APP_SIMILARITY_MAX (APP_SIMILARITY_SCALE - 1)
+#define APP_SIMILARITY_MIN (-APP_SIMILARITY_SCALE)
+
 /**
  * @brief Runtime configuration passed to the application module
  *
@@ -49,7 +53,7 @@ typedef struct
     GPIO_TypeDef *reset_gpio_port;    // Camera RESET GPIO port
     uint16_t reset_gpio_pin;          // Camera RESET GPIO pin
     UART_HandleTypeDef *uart;         // UART handle used for streaming
-    display_pins_t display_config;  // 7-segment display GPIO mapping
+    display_config_t display_config;  // 7-segment display GPIO mapping
 } app_config_t;
 
 /**
