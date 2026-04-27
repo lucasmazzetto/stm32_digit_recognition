@@ -1,12 +1,10 @@
 # STM32 Digit Recognition
 
-This project captures images from an **OV2640** camera module and runs a [quantized neural network](https://github.com/lucasmazzetto/quantized_digit_recognition) embedded on the **STM32 NUCLEO F446RE** to predict handwritten digits using the microcontroller, with Integer-only operations on the MCU (no floating-point).
+This project captures images from an **OV2640** camera module and runs a [quantized neural network](https://github.com/lucasmazzetto/quantized_digit_recognition) embedded on the **STM32 NUCLEO F446RE** to predict handwritten digits using the microcontroller, with integer-only operations on the MCU (no floating-point).
 
+<img width="626" height="406" alt="ezgif-3ec11b2b50cf3916" src="https://github.com/user-attachments/assets/ef0d92cd-4c76-4a44-9b89-e32dfdbba8b7" />
 
-<img width="480" height="311" alt="ezgif-4314612878122757" src="https://github.com/user-attachments/assets/c8e7abfe-939d-44d8-b542-44eb0bd97c8b" />
-
-
-The firmware now performs live camera bring-up and runs a continuous capture, preprocess, and inference loop. It also applies an input gate (known/unknown filter): after inference, it compares the current input image and the model logits against reference centers using cosine distance, and only accepts the digit when both distances are below their thresholds. After prediction and filtering, the result is shown on the 7-segment display.
+The firmware performs live camera bring-up and runs a continuous capture, preprocess, and inference loop. It also applies an input gate (known/unknown filter): after inference, it compares the current input image and the model logits against reference centers using cosine distance, and only accepts the digit when both distances are below their thresholds. After prediction and filtering, the result is shown on the 7-segment display.
 
 At a hardware level, the **OV2640** sends pixel data through the DCMI interface while SCCB/I2C is used for camera control, and DMA transfers DCMI data into a RAM frame buffer with low CPU overhead. From this buffer, the firmware runs grayscale/crop/resize preprocessing, executes integer-only inference, applies the filter, and updates the display with the final result.
 
