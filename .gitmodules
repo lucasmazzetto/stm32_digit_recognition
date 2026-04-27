@@ -1,0 +1,3 @@
+[submodule "external/quantized_digit_recognition"]
+	path = external/quantized_digit_recognition
+	url = https://github.com/lucasmazzetto/quantized_digit_recognition
