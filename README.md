@@ -1,4 +1,4 @@
-<img width="800" height="420" alt="WhatsApp-Video-2026-04-29-at-124-ezgif com-optimize" src="https://github.com/user-attachments/assets/5570c242-1f5b-48e5-942a-b491012a3d26" /># STM32 Digit Recognition
+# STM32 Digit Recognition
 
 This project captures images from an **OV2640** camera module and runs a [quantized neural network](https://github.com/lucasmazzetto/quantized_digit_recognition) embedded on the **STM32 NUCLEO F446RE** to predict handwritten digits using the microcontroller, with integer-only operations on the MCU (no floating-point).
 
