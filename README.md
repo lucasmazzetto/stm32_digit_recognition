@@ -1,8 +1,8 @@
-# STM32 Digit Recognition
+<img width="800" height="420" alt="WhatsApp-Video-2026-04-29-at-124-ezgif com-optimize" src="https://github.com/user-attachments/assets/5570c242-1f5b-48e5-942a-b491012a3d26" /># STM32 Digit Recognition
 
 This project captures images from an **OV2640** camera module and runs a [quantized neural network](https://github.com/lucasmazzetto/quantized_digit_recognition) embedded on the **STM32 NUCLEO F446RE** to predict handwritten digits using the microcontroller, with integer-only operations on the MCU (no floating-point).
 
-<img width="626" height="406" alt="ezgif-3ec11b2b50cf3916" src="https://github.com/user-attachments/assets/ef0d92cd-4c76-4a44-9b89-e32dfdbba8b7" />
+<img width="800" height="420" alt="digit" src="https://github.com/user-attachments/assets/7f2a4dcb-456c-4e94-8917-d8bbec971447" />
 
 The firmware performs live camera bring-up and runs a continuous capture, preprocess, and inference loop. It also applies an input gate (known/unknown filter): after inference, it compares the current input image and the model logits against reference centers using cosine distance, and only accepts the digit when both distances are below their thresholds. After prediction and filtering, the result is shown on the 7-segment display.
 
