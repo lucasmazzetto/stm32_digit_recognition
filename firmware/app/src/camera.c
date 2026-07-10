@@ -1,5 +1,9 @@
 #include "camera.h"
 
+#define OV2640_REG_PID 0x0AU  // Product ID MSB register (bank 1)
+#define OV2640_REG_VER 0x0BU  // Product ID LSB / version register (bank 1)
+#define OV2640_PID_VALUE 0x26U
+
 static camera_config_t camera_config;
 
 static const unsigned char camera_reg_init[][2] = {
@@ -217,6 +221,49 @@ static short sccb_read_register_retry(const uint8_t reg_addr,
 }
 
 /**
+ * @brief Verifies the sensor identity before configuration.
+ *
+ * Selects the sensor register bank and reads PID/VER. Only PID is enforced so
+ * die revisions and clones with a different VER still pass.
+ *
+ * @return HAL_OK when a sensor with the expected PID answered, otherwise
+ *         HAL_ERROR.
+ */
+static HAL_StatusTypeDef camera_probe(void)
+{
+    uint8_t pid = 0U;
+    uint8_t ver = 0U;
+
+    // Software reset restores register defaults, so select bank 1 explicitly
+    if (sccb_write_register_retry(0xff, 0x01) != 1) {
+        return HAL_ERROR;
+    }
+
+    if (sccb_read_register_retry(OV2640_REG_PID, &pid) != 1) {
+        return HAL_ERROR;
+    }
+
+    if (sccb_read_register_retry(OV2640_REG_VER, &ver) != 1) {
+        return HAL_ERROR;
+    }
+
+#ifdef DEBUG
+    serial_print(camera_config.uart, "PID: 0x%x, VER: 0x%x\r\n", pid, ver);
+#endif
+
+    if (pid != OV2640_PID_VALUE) {
+#ifdef DEBUG
+        serial_print(camera_config.uart,
+                     "camera_probe: PID mismatch expected=0x%x got=0x%x\r\n",
+                     OV2640_PID_VALUE, pid);
+#endif
+        return HAL_ERROR;
+    }
+
+    return HAL_OK;
+}
+
+/**
  * @brief Indicates if a written register should be read back for verification.
  *
  * @param reg_addr OV2640 register address.
@@ -347,14 +394,12 @@ HAL_StatusTypeDef camera_init(const camera_config_t *const config)
 
     HAL_Delay(100);
 
+    // Abort before writing the register tables when no expected sensor answers
+    if (camera_probe() != HAL_OK) {
+        return HAL_ERROR;
+    }
+
 #ifdef DEBUG
-    uint8_t pid;
-    uint8_t ver;
-
-    sccb_read_register(0x0a, &pid);  // pid value is 0x26
-    sccb_read_register(0x0b, &ver);  // ver value is 0x42
-    serial_print(camera_config.uart, "PID: 0x%x, VER: 0x%x\n", pid, ver);
-
     serial_print(camera_config.uart,
                  "camera_init: stopping DCMI before capture\r\n");
 #endif
