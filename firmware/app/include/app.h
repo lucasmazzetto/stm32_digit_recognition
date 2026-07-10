@@ -14,9 +14,6 @@
 #include "lut.h"
 #include "serial.h"
 
-#define CROP_FRAME_HEIGHT 120U
-#define CROP_FRAME_WIDTH 120U
-
 #define INPUT_FILTER_DARK_MAX_THRESHOLD 60U
 #define INPUT_FILTER_MEDIUM_MAX_THRESHOLD 150U
 

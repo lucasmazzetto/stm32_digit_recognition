@@ -15,27 +15,6 @@ uint32_t image_yuv422_to_grayscale(uint8_t *frame_buffer, uint32_t input_size,
     return output_index;
 }
 
-uint32_t image_grayscale_crop_center(uint8_t *frame_buffer,
-                                     uint16_t source_width,
-                                     uint16_t source_height,
-                                     uint16_t crop_width, uint16_t crop_height)
-{
-    const uint16_t x_offset = (uint16_t)((source_width - crop_width) / 2U);
-    const uint16_t y_offset = (uint16_t)((source_height - crop_height) / 2U);
-
-    for (uint16_t row = 0U; row < crop_height; ++row) {
-        const uint32_t src_index =
-            ((uint32_t)(y_offset + row) * (uint32_t)source_width) + x_offset;
-        const uint32_t dst_index = (uint32_t)row * (uint32_t)crop_width;
-
-        // memmove handles overlap while compacting cropped rows in-place
-        memmove(&frame_buffer[dst_index], &frame_buffer[src_index],
-                (size_t)crop_width);
-    }
-
-    return (uint32_t)crop_width * (uint32_t)crop_height;
-}
-
 uint32_t image_grayscale_resize(const uint8_t *source_buffer,
                                 uint16_t source_width, uint16_t source_height,
                                 uint8_t *target_buffer, uint16_t target_width,

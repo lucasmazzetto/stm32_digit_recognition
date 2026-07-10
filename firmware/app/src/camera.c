@@ -439,6 +439,19 @@ HAL_StatusTypeDef camera_init(const camera_config_t *const config)
         return HAL_ERROR;
     }
 
+    // Capture only the center window; cropped pixels never reach RAM.
+    // DCMI expects sizes in RM0390 format: counts minus one.
+    if (HAL_DCMI_ConfigCrop(camera_config.dcmi_handle, CAMERA_CROP_X0_CYCLES,
+                            CAMERA_CROP_Y0_LINES,
+                            CAMERA_CROP_XSIZE_CYCLES - 1U,
+                            CAMERA_CROP_YSIZE_LINES - 1U) != HAL_OK) {
+        return HAL_ERROR;
+    }
+
+    if (HAL_DCMI_EnableCrop(camera_config.dcmi_handle) != HAL_OK) {
+        return HAL_ERROR;
+    }
+
 #ifdef DEBUG
     serial_print(camera_config.uart, "Finalize configuration\r\n");
     serial_print(camera_config.uart, "camera_init: done\r\n");

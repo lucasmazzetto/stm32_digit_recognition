@@ -31,27 +31,6 @@ uint32_t image_yuv422_to_grayscale(uint8_t *frame_buffer, uint32_t input_size,
                                    uint8_t phase);
 
 /**
- * @brief Center-crops an in-memory grayscale image in-place.
- *
- * The input buffer must store at least `source_width * source_height` bytes in
- * row-major order. The cropped output is compacted at the beginning of the
- * same buffer.
- * This routine assumes all arguments are valid.
- *
- * @param frame_buffer Input/output grayscale buffer.
- * @param source_width Source image width in pixels.
- * @param source_height Source image height in pixels.
- * @param crop_width Target crop width in pixels.
- * @param crop_height Target crop height in pixels.
- * @return Number of cropped bytes written.
- */
-uint32_t image_grayscale_crop_center(uint8_t *frame_buffer,
-                                     uint16_t source_width,
-                                     uint16_t source_height,
-                                     uint16_t crop_width,
-                                     uint16_t crop_height);
-
-/**
  * @brief Resizes a grayscale image with integer bilinear interpolation.
  *
  * This routine reads pixels from `source_buffer` and writes the resized image

@@ -271,7 +271,6 @@ void app_run(void)
 {
     uint32_t length;
     uint32_t grayscale_length = 0U;
-    uint32_t cropped_length = 0U;
     uint32_t resized_length = 0U;
 
     memset(frame_buffer, 0, CAMERA_FRAME_BUFFER_SIZE);
@@ -279,20 +278,14 @@ void app_run(void)
     length = camera_capture_frame(frame_buffer, CAMERA_FRAME_BUFFER_SIZE);
 
     if (length > 0U) {
+        // DCMI hardware crop already delivered the center 120x120 window.
         // Output remains in frame_buffer, compacted at the beginning
         grayscale_length = image_yuv422_to_grayscale(frame_buffer, length, 0U);
 
         if (grayscale_length > 0U) {
-            // Crop 160x120 grayscale to a square 120x120 image
-            cropped_length = image_grayscale_crop_center(
-                frame_buffer, CAMERA_FRAME_WIDTH, CAMERA_FRAME_HEIGHT,
-                CROP_FRAME_WIDTH, CROP_FRAME_HEIGHT);
-        }
-
-        if (cropped_length > 0U) {
             // Resize 120x120 to 28x28 using bilinear interpolation
             resized_length = image_grayscale_resize(
-                frame_buffer, CROP_FRAME_WIDTH, CROP_FRAME_HEIGHT,
+                frame_buffer, CAMERA_FRAME_WIDTH, CAMERA_FRAME_HEIGHT,
                 resized_frame_buffer, OUTPUT_FRAME_WIDTH, OUTPUT_FRAME_HEIGHT);
         }
     }
@@ -303,8 +296,6 @@ void app_run(void)
                  (unsigned int)length);
     serial_print(app_config.uart, "Grayscale size: %u bytes\r\n",
                  (unsigned int)grayscale_length);
-    serial_print(app_config.uart, "Cropped size: %u bytes\r\n",
-                 (unsigned int)cropped_length);
     serial_print(app_config.uart, "Resized size: %u bytes\r\n",
                  (unsigned int)resized_length);
 #endif
