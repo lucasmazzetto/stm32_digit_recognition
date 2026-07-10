@@ -36,8 +36,10 @@ typedef struct
  * state before the first capture.
  *
  * @param config Pointer to camera runtime configuration.
+ * @return HAL_OK when every configuration write succeeded, HAL_ERROR when any
+ *         SCCB write failed after retries.
  */
-void camera_init(const camera_config_t *config);
+HAL_StatusTypeDef camera_init(const camera_config_t *config);
 
 /**
  * @brief Starts one DCMI snapshot DMA transfer into the frame buffer.

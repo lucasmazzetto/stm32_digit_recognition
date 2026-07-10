@@ -238,8 +238,11 @@ static uint8_t sccb_should_verify_register(const uint8_t reg_addr)
  * The array must be terminated with `{0xff, 0xff}`.
  *
  * @param register_table Register/value pairs to be written sequentially.
+ * @return HAL_OK when every register write succeeded, HAL_ERROR on the first
+ *         write that fails after retries.
  */
-static void apply_register_table(const unsigned char register_table[][2])
+static HAL_StatusTypeDef apply_register_table(
+    const unsigned char register_table[][2])
 {
     unsigned short table_index = 0;
     uint8_t reg_addr, data, data_read;
@@ -252,17 +255,27 @@ static void apply_register_table(const unsigned char register_table[][2])
         if (reg_addr == 0xff && data == 0xff) {
             break;
         }
-        // Write one register and continue even if later verify fails
         write_ok = sccb_write_register_retry(reg_addr, data);
 #ifdef DEBUG
         serial_print(camera_config.uart,
                      "SCCB write: 0x%x=>0x%x status=%d\r\n", reg_addr, data,
                      (int)write_ok);
 #endif
+        // Fail fast: retries and bus recovery already happened inside
+        // sccb_write_register_retry, so this register is unrecoverable
+        if (write_ok != 1) {
+#ifdef DEBUG
+            serial_print(
+                camera_config.uart,
+                "SCCB write failed after retries: reg=0x%x data=0x%x\r\n",
+                reg_addr, data);
+#endif
+            return HAL_ERROR;
+        }
         HAL_Delay(SCCB_WRITE_SETTLE_DELAY_MS);
 
         // Read-back verification is intentionally selective for speed and bus stability
-        if ((write_ok == 1) && (sccb_should_verify_register(reg_addr) == 1U)) {
+        if (sccb_should_verify_register(reg_addr) == 1U) {
             read_ok = sccb_read_register_retry(reg_addr, &data_read);
             if ((read_ok == 1) && (data != data_read)) {
 #ifdef DEBUG
@@ -277,19 +290,14 @@ static void apply_register_table(const unsigned char register_table[][2])
                              "SCCB verify failed: reg=0x%x\r\n", reg_addr);
 #endif
             }
-        } else if (write_ok != 1) {
-#ifdef DEBUG
-            serial_print(
-                camera_config.uart,
-                "SCCB write failed after retries: reg=0x%x data=0x%x\r\n",
-                reg_addr, data);
-#endif
         }
         table_index++;
     }
+
+    return HAL_OK;
 }
 
-void camera_init(const camera_config_t *const config)
+HAL_StatusTypeDef camera_init(const camera_config_t *const config)
 {
     // Store handles and GPIO mapping for runtime camera operations
     camera_config = *config;
@@ -329,18 +337,14 @@ void camera_init(const camera_config_t *const config)
 #endif
 
     // Select bank 1 before writing COM7 reset bit
-#ifdef DEBUG
-    const short bank_select_status = sccb_write_register(0xff, 0x01);
-    const short reset_status = sccb_write_register(0x12, 0x80);
-    serial_print(camera_config.uart,
-                 "camera_init: SCCB write bank select -> %d\r\n",
-                 bank_select_status);
-    serial_print(camera_config.uart, "camera_init: SCCB write reset -> %d\r\n",
-                 reset_status);
-#else
-    sccb_write_register(0xff, 0x01);
-    sccb_write_register(0x12, 0x80);
-#endif
+    if (sccb_write_register_retry(0xff, 0x01) != 1) {
+        return HAL_ERROR;
+    }
+
+    if (sccb_write_register_retry(0x12, 0x80) != 1) {
+        return HAL_ERROR;
+    }
+
     HAL_Delay(100);
 
 #ifdef DEBUG
@@ -362,23 +366,37 @@ void camera_init(const camera_config_t *const config)
     serial_print(camera_config.uart, "Applying fixed profile 160x120 YUV422\r\n");
 #endif
     // Apply vendor initialization table before output format setup
-    apply_register_table(camera_reg_init);
+    if (apply_register_table(camera_reg_init) != HAL_OK) {
+        return HAL_ERROR;
+    }
 
     // Switch DSP output path to YUV422
-    apply_register_table(camera_reg_yuv422);
+    if (apply_register_table(camera_reg_yuv422) != HAL_OK) {
+        return HAL_ERROR;
+    }
 
     // Ensure register bank and output control are in expected state
     HAL_Delay(10);
-    sccb_write_register(0xff, 0x01);
+    if (sccb_write_register_retry(0xff, 0x01) != 1) {
+        return HAL_ERROR;
+    }
+
     HAL_Delay(10);
-    sccb_write_register(0x15, 0x00);
+    if (sccb_write_register_retry(0x15, 0x00) != 1) {
+        return HAL_ERROR;
+    }
+
     // Apply fixed 160x120 windowing/scaling registers
-    apply_register_table(camera_reg_resolution_160x120);
+    if (apply_register_table(camera_reg_resolution_160x120) != HAL_OK) {
+        return HAL_ERROR;
+    }
 
 #ifdef DEBUG
     serial_print(camera_config.uart, "Finalize configuration\r\n");
     serial_print(camera_config.uart, "camera_init: done\r\n");
 #endif
+
+    return HAL_OK;
 }
 
 uint32_t camera_capture_frame(uint8_t *const frame_buffer,

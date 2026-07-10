@@ -240,7 +240,7 @@ static void preprocess_image_to_model_input(const uint8_t *src, uint32_t len,
     }
 }
 
-void app_init(const app_config_t *config)
+HAL_StatusTypeDef app_init(const app_config_t *config)
 {
     camera_config_t camera_config;
 
@@ -254,8 +254,10 @@ void app_init(const app_config_t *config)
     camera_config.reset_gpio_port = app_config.reset_gpio_port;
     camera_config.reset_gpio_pin = app_config.reset_gpio_pin;
 
-    camera_init(&camera_config);
+    // Initialize the display first so it is blanked even when camera fails
     display_init(&app_config.display_config);
+
+    return camera_init(&camera_config);
 }
 
 #ifdef DEBUG

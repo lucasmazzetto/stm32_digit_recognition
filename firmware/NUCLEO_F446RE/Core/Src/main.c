@@ -131,8 +131,16 @@ int main(void)
         },
   };
 
-  app_init(&app_config);
-  
+  // Retry until the camera answers so a loose or late-powered module recovers
+  // without a board reset
+  while (app_init(&app_config) != HAL_OK)
+  {
+#ifdef DEBUG
+    serial_print(&huart2, "Camera init failed, retrying in 1s\r\n");
+#endif
+    HAL_Delay(1000U);
+  }
+
   HAL_Delay(10U);
 
 #ifdef DEBUG

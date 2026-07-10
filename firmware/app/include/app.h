@@ -60,8 +60,10 @@ typedef struct
  * @brief Initializes application state and camera subsystem
  *
  * @param config Pointer to runtime configuration with HAL handles and GPIO mapping
+ * @return HAL_OK when the camera was configured successfully, HAL_ERROR when
+ *         camera initialization failed (caller may retry)
  */
-void app_init(const app_config_t *config);
+HAL_StatusTypeDef app_init(const app_config_t *config);
 
 /**
  * @brief Executes one application cycle
