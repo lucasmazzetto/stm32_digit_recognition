@@ -319,7 +319,6 @@ static HAL_StatusTypeDef apply_register_table(
 #endif
             return HAL_ERROR;
         }
-        HAL_Delay(SCCB_WRITE_SETTLE_DELAY_MS);
 
         // Read-back verification is intentionally selective for speed and bus stability
         if (sccb_should_verify_register(reg_addr) == 1U) {
@@ -340,6 +339,10 @@ static HAL_StatusTypeDef apply_register_table(
         }
         table_index++;
     }
+
+    // Individual SCCB writes need no settle time; give the sensor DSP one
+    // pause after the whole configuration block instead
+    HAL_Delay(SCCB_TABLE_SETTLE_DELAY_MS);
 
     return HAL_OK;
 }
