@@ -271,12 +271,39 @@ static HAL_StatusTypeDef camera_probe(void)
  */
 static uint8_t sccb_should_verify_register(const uint8_t reg_addr)
 {
-    // Verify only control-critical registers to keep configuration time bounded
+    // Verify only registers whose value drives configuration integrity:
+    // bank select, COM7, CLKRC, R_DVP_SP, and DSP RESET
     return (uint8_t)((reg_addr == 0xffU) || (reg_addr == 0x12U) ||
-                     (reg_addr == 0x15U) || (reg_addr == 0x11U) ||
-                     (reg_addr == 0x24U) || (reg_addr == 0x25U) ||
-                     (reg_addr == 0x26U) || (reg_addr == 0xd3U) ||
+                     (reg_addr == 0x11U) || (reg_addr == 0xd3U) ||
                      (reg_addr == 0xe0U));
+}
+
+/**
+ * @brief Reads back one register and compares against the expected value.
+ *
+ * @param reg_addr OV2640 register address.
+ * @param expected Value the register should hold.
+ * @return 1 when the register reads back as expected, otherwise 0.
+ */
+static short sccb_verify_register(const uint8_t reg_addr,
+                                  const uint8_t expected)
+{
+    uint8_t data_read = 0U;
+
+    if (sccb_read_register_retry(reg_addr, &data_read) != 1) {
+        return 0;
+    }
+
+#ifdef DEBUG
+    if (data_read != expected) {
+        serial_print(camera_config.uart,
+                     "SCCB verify mismatch: reg=0x%x expected=0x%x "
+                     "got=0x%x\r\n",
+                     reg_addr, expected, data_read);
+    }
+#endif
+
+    return (data_read == expected) ? 1 : 0;
 }
 
 /**
@@ -292,9 +319,8 @@ static HAL_StatusTypeDef apply_register_table(
     const unsigned char register_table[][2])
 {
     unsigned short table_index = 0;
-    uint8_t reg_addr, data, data_read;
+    uint8_t reg_addr, data;
     short write_ok;
-    short read_ok;
     while (1) {
         reg_addr = register_table[table_index][0];
         data = register_table[table_index][1];
@@ -322,19 +348,18 @@ static HAL_StatusTypeDef apply_register_table(
 
         // Read-back verification is intentionally selective for speed and bus stability
         if (sccb_should_verify_register(reg_addr) == 1U) {
-            read_ok = sccb_read_register_retry(reg_addr, &data_read);
-            if ((read_ok == 1) && (data != data_read)) {
+            if (sccb_verify_register(reg_addr, data) != 1) {
+                // One corrective rewrite, then a persisting mismatch is fatal
+                if ((sccb_write_register_retry(reg_addr, data) != 1) ||
+                    (sccb_verify_register(reg_addr, data) != 1)) {
 #ifdef DEBUG
-                serial_print(camera_config.uart,
-                             "SCCB verify mismatch: reg=0x%x expected=0x%x "
-                             "got=0x%x\r\n",
-                             reg_addr, data, data_read);
+                    serial_print(camera_config.uart,
+                                 "SCCB verify failed: reg=0x%x "
+                                 "expected=0x%x\r\n",
+                                 reg_addr, data);
 #endif
-            } else if (read_ok != 1) {
-#ifdef DEBUG
-                serial_print(camera_config.uart,
-                             "SCCB verify failed: reg=0x%x\r\n", reg_addr);
-#endif
+                    return HAL_ERROR;
+                }
             }
         }
         table_index++;
