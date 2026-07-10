@@ -608,14 +608,12 @@ uint32_t camera_capture_frame(uint8_t *const frame_buffer,
         }
     }
 
-    HAL_DCMI_Suspend(camera_config.dcmi_handle);
-
     // Stop snapshot so next capture always starts from a clean state
     HAL_DCMI_Stop(camera_config.dcmi_handle);
 
 #ifdef DEBUG
     serial_print(camera_config.uart,
-                 "camera_capture_frame: suspend/stop complete\r\n");
+                 "camera_capture_frame: stop complete\r\n");
 #endif
 
     return transfer_words * 4U;
